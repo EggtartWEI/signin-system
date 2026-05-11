@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>南宁公司值班签到表</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部标题 -->
+        <header class="header">
+            <div class="logo">
+                <img src="logo.png" alt="国家能源集团" class="logo-img">
+            </div>
+            <h1 class="title">南宁公司（<span id="titleDate"></span>）值班签到表</h1>
+            <div class="admin-mode-control">
+                <button id="adminModeBtn" class="btn btn-admin">管理员选项</button>
+                <div id="modeStatus" class="mode-status">当前模式：内网开放</div>
+            </div>
+        </header>
+
+        <!-- 管理员模式设置弹窗 -->
+        <div id="modeModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>签到模式设置</h3>
+                    <span class="close-btn" id="closeModeModal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="form-row">
+                        <label>管理员密码：</label>
+                        <input type="password" id="modeAdminPassword" class="input-box" placeholder="请输入管理员密码">
+                    </div>
+                    <div class="form-row">
+                        <label>签到模式：</label>
+                        <select id="signInMode" class="select-box">
+                            <option value="open">模式一：公司内网开放（所有内网IP可签到）</option>
+                            <option value="restricted">模式二：限制IP签到（仅指定IP可签到）</option>
+                        </select>
+                    </div>
+                    <div id="ipSettings" class="ip-settings" style="display: none;">
+                        <div class="form-row">
+                            <label>允许签到的IP地址：</label>
+                            <textarea id="allowedIPs" class="input-box" rows="4" placeholder="每行输入一个IP地址，例如：
+192.168.1.100
+192.168.1.101"></textarea>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button id="saveModeBtn" class="btn btn-primary">保存设置</button>
+                        <button id="cancelModeBtn" class="btn btn-secondary">取消</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 当前时间 -->
+        <section class="card time-section">
+            <div class="current-time">
+                当前时间：<span id="currentTime"></span>
+            </div>
+            <div id="timeNotice" class="time-notice">
+                请于当日20:00前完成签到，迟到人员名字将标红，感谢您的配合！
+            </div>
+        </section>
+
+        <!-- 本班签到 -->
+        <section class="card sign-in-section">
+            <h2 class="section-title">本班签到</h2>
+            <div class="form-row">
+                <label>部门大类：</label>
+                <select id="deptCategory" class="select-box">
+                    <option value="">请选择</option>
+                    <option value="公司值班">公司值班</option>
+                    <option value="计划部">计划部</option>
+                    <option value="运行部">运行部</option>
+                    <option value="D标">D标</option>
+                    <option value="生产管理">生产管理</option>
+                    <option value="A标">A标</option>
+                    <option value="其他">其他（维护/保安/保洁）</option>
+                </select>
+                <label>部门细项：</label>
+                <select id="deptSubItem" class="select-box" disabled>
+                    <option value="">请先选择部门大类</option>
+                </select>
+                <input type="text" id="otherDept" class="input-box" placeholder="填写具体部门" style="display: none;">
+            </div>
+            <div class="form-row sign-in-row">
+                <label>姓名：</label>
+                <input type="text" id="name" class="input-box" placeholder="">
+                <label>工号：</label>
+                <input type="text" id="employeeId" class="input-box" placeholder="">
+                <label>电话：</label>
+                <input type="text" id="phone" class="input-box" placeholder="">
+                <button id="signInBtn" class="btn btn-primary">签到</button>
+            </div>
+            <input type="hidden" id="latitude" value="">
+            <input type="hidden" id="longitude" value="">
+            <input type="hidden" id="locationAddress" value="">
+        </section>
+
+        <!-- 本班签到情况 -->
+        <section class="card status-section">
+            <h2 class="section-title">本班签到情况</h2>
+            <div class="table-container">
+                <table class="sign-in-table" id="signInTable">
+                    <thead>
+                        <tr class="table-header">
+                            <th>部门</th>
+                            <th>姓名</th>
+                            <th>电话</th>
+                            <th>签到时间</th>
+                            <th>部门</th>
+                            <th>姓名</th>
+                            <th>电话</th>
+                            <th>签到时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="signInTableBody">
+                        <!-- 动态生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 补签/修改/删除 -->
+        <section class="card admin-section">
+            <h2 class="section-title">补签 / 修改 / 删除（仅限管理员）</h2>
+            <div class="admin-form">
+                <div class="form-row">
+                    <label>操作类型：</label>
+                    <select id="adminAction" class="select-box">
+                        <option value="add">补签（新增记录）</option>
+                        <option value="modify">修改（修改已有记录）</option>
+                        <option value="delete">删除（删除记录）</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label>日期：</label>
+                    <input type="date" id="adminDate" class="input-box date-picker">
+                </div>
+                <div class="form-row">
+                    <label>部门：</label>
+                    <input type="text" id="adminDept" class="input-box" placeholder="填写部门">
+                </div>
+                <div class="form-row" id="oldNameRow" style="display: none;">
+                    <label>原姓名（修改/删除用）：</label>
+                    <input type="text" id="adminOldName" class="input-box" placeholder="填写原姓名">
+                </div>
+                <div class="form-row" id="newNameRow">
+                    <label>姓名：</label>
+                    <input type="text" id="adminNewName" class="input-box" placeholder="填写姓名">
+                </div>
+                <div class="form-row" id="employeeIdRow">
+                    <label>工号：</label>
+                    <input type="text" id="adminEmployeeId" class="input-box" placeholder="填写工号">
+                </div>
+                <div class="form-row" id="phoneRow">
+                    <label>电话：</label>
+                    <input type="text" id="adminNewPhone" class="input-box" placeholder="填写电话">
+                </div>
+                <div class="form-row">
+                    <label>管理员密码：</label>
+                    <input type="password" id="adminPassword" class="input-box" placeholder="">
+                </div>
+                <div class="form-row admin-buttons">
+                    <button id="submitAdminBtn" class="btn btn-primary">执行操作</button>
+                    <button id="clearAllBtn" class="btn btn-warning">清空所有数据</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 历史查询 -->
+        <section class="card history-section">
+            <h2 class="section-title">历史查询</h2>
+            <div class="history-form">
+                <label>日期：</label>
+                <input type="date" id="historyDate" class="input-box date-picker">
+                <button id="queryBtn" class="btn btn-primary">查询</button>
+                <button id="exportBtn" class="btn btn-success">导出Excel</button>
+                <button id="exportAllBtn" class="btn btn-info">导出全部数据</button>
+            </div>
+            <div class="table-container" id="historyResult" style="display: none; margin-top: 20px;">
+                <table class="sign-in-table">
+                    <thead>
+                        <tr class="table-header">
+                            <th>部门</th>
+                            <th>姓名</th>
+                            <th>工号</th>
+                            <th>电话</th>
+                            <th>签到时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <!-- 动态生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
