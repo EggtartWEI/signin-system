@@ -91,11 +91,10 @@
             <div class="form-row sign-in-row">
                 <label>姓名：</label>
                 <input type="text" id="name" class="input-box" placeholder="">
-                <label>工号：</label>
-                <input type="text" id="employeeId" class="input-box" placeholder="">
                 <label>电话：</label>
                 <input type="text" id="phone" class="input-box" placeholder="">
                 <button id="signInBtn" class="btn btn-primary">签到</button>
+                <input type="hidden" id="employeeId" value="">
             </div>
             <input type="hidden" id="latitude" value="">
             <input type="hidden" id="longitude" value="">
@@ -143,8 +142,22 @@
                     <input type="date" id="adminDate" class="input-box date-picker">
                 </div>
                 <div class="form-row">
-                    <label>部门：</label>
-                    <input type="text" id="adminDept" class="input-box" placeholder="填写部门">
+                    <label>部门大类：</label>
+                    <select id="adminDeptCategory" class="select-box">
+                        <option value="">请选择</option>
+                        <option value="公司值班">公司值班</option>
+                        <option value="计划部">计划部</option>
+                        <option value="运行部">运行部</option>
+                        <option value="D标">D标</option>
+                        <option value="生产管理">生产管理</option>
+                        <option value="A标">A标</option>
+                        <option value="其他">其他（维护/保安/保洁）</option>
+                    </select>
+                    <label>部门细项：</label>
+                    <select id="adminDeptSubItem" class="select-box" disabled>
+                        <option value="">请先选择部门大类</option>
+                    </select>
+                    <input type="text" id="adminOtherDept" class="input-box" placeholder="填写具体部门" style="display: none;">
                 </div>
                 <div class="form-row" id="oldNameRow" style="display: none;">
                     <label>原姓名（修改/删除用）：</label>

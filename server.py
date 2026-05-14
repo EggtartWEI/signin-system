@@ -30,6 +30,24 @@ PORT = 3000
 DATA_FILE = 'data.json'
 MODE_FILE = 'mode.json'
 
+# 部门结构定义（与前端保持一致）
+DEPT_STRUCTURE = {
+    '公司值班': ['公司领导', '公司中层', '公司干部'],
+    '计划部': ['库管'],
+    '运行部': ['管理'],
+    'D标': ['北京腾疆'],
+    '生产管理': [
+        '管理', 
+        '汽机', 
+        '锅炉', 
+        '输煤环保', 
+        {'name': '电气专业', 'slots': 2}, 
+        {'name': '热控专业', 'slots': 2}
+    ],
+    'A标': ['管理', '汽机', '锅炉', '电气', '热控', '输煤', '硫硝'],
+    '其他': ['起重维护', '保安', '保洁']
+}
+
 # MIME类型映射
 MIME_TYPES = {
     '.html': 'text/html',
@@ -52,6 +70,72 @@ def init_data_files():
     if not os.path.exists(MODE_FILE):
         with open(MODE_FILE, 'w') as f:
             json.dump({'mode': 'open', 'allowedIPs': []}, f)
+
+
+def generate_default_records(date):
+    """生成某天的默认空签到记录"""
+    records = []
+    for category, items in DEPT_STRUCTURE.items():
+        for item in items:
+            if isinstance(item, dict):
+                # 多签到位置
+                for i in range(item['slots']):
+                    dept_name = item['name'] if i == 0 else '{}({})'.format(item['name'], i + 1)
+                    full_dept = '{}-{}'.format(category, item['name'])
+                    records.append({
+                        'department': full_dept,
+                        'displayName': dept_name,
+                        'name': '-',
+                        'employeeId': '-',
+                        'phone': '-',
+                        'signInTime': None,
+                        'latitude': '',
+                        'longitude': '',
+                        'location': '',
+                        'ip': '',
+                        'isDefault': True
+                    })
+            else:
+                full_dept = '{}-{}'.format(category, item)
+                records.append({
+                    'department': full_dept,
+                    'displayName': item,
+                    'name': '-',
+                    'employeeId': '-',
+                    'phone': '-',
+                    'signInTime': None,
+                    'latitude': '',
+                    'longitude': '',
+                    'location': '',
+                    'ip': '',
+                    'isDefault': True
+                })
+    return records
+
+
+def get_or_create_daily_records(date):
+    """获取或创建某天的签到记录"""
+    data = read_data()
+    if date not in data:
+        # 生成默认空记录
+        data[date] = generate_default_records(date)
+        save_data(data)
+    return data[date]
+
+
+def update_record(date, department, updates):
+    """更新指定部门的签到记录"""
+    data = read_data()
+    if date not in data:
+        return False
+    
+    for record in data[date]:
+        if record['department'] == department:
+            record.update(updates)
+            record['isDefault'] = False
+            save_data(data)
+            return True
+    return False
 
 
 def read_data():
@@ -189,6 +273,14 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     
     def handle_get_records(self):
         """获取所有签到记录"""
+        parsed_path = urlparse(self.path)
+        query_params = parse_qs(parsed_path.query)
+        
+        # 如果指定了日期，确保该日期的记录存在
+        date_param = query_params.get('date', [None])[0]
+        if date_param:
+            get_or_create_daily_records(date_param)
+        
         data = read_data()
         self.send_json_response(data)
     
@@ -215,24 +307,45 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.send_error_response(400, 'Missing parameters')
                 return
             
-            records = read_data()
+            # 获取客户端IP
+            client_ip = self.headers.get('X-Forwarded-For', self.client_address[0])
+            record['ip'] = client_ip  # 记录IP地址
             
-            if date not in records:
-                records[date] = []
+            # 确保该日期的记录已初始化
+            records = get_or_create_daily_records(date)
             
-            # 检查是否已存在（同部门同名）
-            existing_index = -1
-            for i, r in enumerate(records[date]):
-                if r.get('department') == record.get('department') and r.get('name') == record.get('name'):
-                    existing_index = i
+            # 检查是否为管理员操作（补签/修改）
+            is_admin_action = record.get('isAdminAction') == True
+            department = record.get('department')
+            
+            # 只有普通签到才进行IP限制检查
+            if not is_admin_action:
+                # 检查该IP今天是否已经签过到（同一部门可以重复签到换人，不同部门不行）
+                for r in records:
+                    if r.get('ip') == client_ip and r.get('department') != department:
+                        self.send_error_response(403, '签到失败，当前IP已签到，请更换IP签到')
+                        return
+            
+            # 查找并更新对应部门的记录
+            found = False
+            for r in records:
+                if r.get('department') == department:
+                    # 更新记录（保留displayName）
+                    display_name = r.get('displayName')
+                    r.update(record)
+                    r['displayName'] = display_name
+                    r['isDefault'] = False
+                    found = True
                     break
             
-            if existing_index >= 0:
-                records[date][existing_index] = record
-            else:
-                records[date].append(record)
+            if not found:
+                # 如果找不到对应部门（不应该发生），添加新记录
+                records.append(record)
             
-            save_data(records)
+            # 读取完整数据，更新当前日期，保留其他日期
+            all_data = read_data()
+            all_data[date] = records
+            save_data(all_data)
             self.send_json_response({'success': True})
             
         except ValueError as e:

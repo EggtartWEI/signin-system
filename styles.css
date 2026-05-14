@@ -442,6 +442,42 @@ textarea.input-box {
     max-width: 300px;
 }
 
+/* 管理员部门选择行样式 - 让大类和细项在一行，且与其他行对齐 */
+.admin-form .form-row:has(#adminDeptCategory) {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+/* 第一个标签（部门大类）与其他行标签对齐 */
+.admin-form .form-row:has(#adminDeptCategory) label:first-of-type {
+    width: 140px;
+    min-width: 140px;
+    text-align: right;
+    margin-right: 0;
+}
+
+/* 第二个标签（部门细项） */
+.admin-form .form-row:has(#adminDeptCategory) label:nth-of-type(2) {
+    width: auto;
+    min-width: 70px;
+    text-align: right;
+    margin-left: 10px;
+    margin-right: 0;
+}
+
+.admin-form .form-row:has(#adminDeptCategory) .select-box {
+    width: auto;
+    min-width: 120px;
+    max-width: 150px;
+    flex: 0 1 auto;
+}
+
+.admin-form .form-row:has(#adminDeptCategory) #adminOtherDept {
+    width: 150px;
+    flex: 0 1 auto;
+}
+
 .admin-buttons {
     margin-top: 20px;
     padding-left: 150px;

@@ -184,9 +184,13 @@ function setDefaultDates() {
 }
 
 // 从服务器获取所有记录
-async function fetchRecords() {
+async function fetchRecords(date = null) {
     try {
-        const response = await fetch(`${API_BASE}/api/records`);
+        let url = `${API_BASE}/api/records`;
+        if (date) {
+            url += `?date=${date}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) throw new Error('获取数据失败');
         allRecords = await response.json();
         return allRecords;
@@ -205,11 +209,20 @@ async function saveRecordToServer(date, record) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ date, record })
         });
-        if (!response.ok) throw new Error('保存失败');
+        if (!response.ok) {
+            if (response.status === 403) {
+                const errorData = await response.json();
+                alert(errorData.error || '签到失败，当前IP已签到，请更换IP签到');
+                return false;
+            }
+            throw new Error('保存失败');
+        }
         return true;
     } catch (error) {
         console.error('保存记录失败:', error);
-        alert('保存失败，请检查网络连接');
+        if (!error.message.includes('签到失败')) {
+            alert('保存失败，请检查网络连接');
+        }
         return false;
     }
 }
@@ -246,7 +259,7 @@ function isLate(signInTime) {
 // 加载今日签到记录
 async function loadTodayRecords() {
     const today = formatDate(new Date());
-    await fetchRecords(); // 从服务器获取最新数据
+    await fetchRecords(today); // 从服务器获取最新数据，并确保今日记录已初始化
     const todayRecords = allRecords[today] || [];
     renderSignInTable(todayRecords);
 }
@@ -256,13 +269,11 @@ function renderSignInTable(records) {
     const tbody = document.getElementById('signInTableBody');
     tbody.innerHTML = '';
     
-    // 创建记录查找映射（department -> records数组）
+    // 创建记录查找映射（department -> record）
+    // 现在服务器返回的是固定列表，每个部门只有一条记录
     const recordMap = {};
     records.forEach(record => {
-        if (!recordMap[record.department]) {
-            recordMap[record.department] = [];
-        }
-        recordMap[record.department].push(record);
+        recordMap[record.department] = record;
     });
     
     // 按固定布局渲染表格
@@ -303,10 +314,10 @@ function renderSignInTable(records) {
             
             // 左列
             const leftItem = expandedItems[i];
-            const leftRecords = recordMap[leftItem.deptKey] || [];
-            const leftRecord = leftRecords[leftItem.slotIndex];
+            const leftRecord = recordMap[leftItem.deptKey];
             
-            if (leftRecord) {
+            if (leftRecord && !leftRecord.isDefault) {
+                // 已签到
                 const leftNameClass = isLate(leftRecord.signInTime) ? 'late-sign' : '';
                 const leftTime = formatTime(new Date(leftRecord.signInTime));
                 row.innerHTML = `
@@ -328,10 +339,10 @@ function renderSignInTable(records) {
             // 右列
             if (expandedItems[i + 1]) {
                 const rightItem = expandedItems[i + 1];
-                const rightRecords = recordMap[rightItem.deptKey] || [];
-                const rightRecord = rightRecords[rightItem.slotIndex];
+                const rightRecord = recordMap[rightItem.deptKey];
                 
-                if (rightRecord) {
+                if (rightRecord && !rightRecord.isDefault) {
+                    // 已签到
                     const rightNameClass = isLate(rightRecord.signInTime) ? 'late-sign' : '';
                     const rightTime = formatTime(new Date(rightRecord.signInTime));
                     row.innerHTML += `
@@ -398,6 +409,35 @@ function setupEventListeners() {
     
     // 操作类型切换
     document.getElementById('adminAction').addEventListener('change', toggleAdminFields);
+    
+    // 管理员部门大类选择变化
+    document.getElementById('adminDeptCategory').addEventListener('change', function() {
+        const category = this.value;
+        const subItemSelect = document.getElementById('adminDeptSubItem');
+        const otherDeptInput = document.getElementById('adminOtherDept');
+        
+        if (category === '') {
+            subItemSelect.disabled = true;
+            subItemSelect.innerHTML = '<option value="">请先选择部门大类</option>';
+            otherDeptInput.style.display = 'none';
+        } else if (category === '其他') {
+            subItemSelect.disabled = true;
+            subItemSelect.innerHTML = '<option value="">请直接填写</option>';
+            otherDeptInput.style.display = 'inline-block';
+            otherDeptInput.placeholder = '填写：起重维护/保安/保洁';
+        } else {
+            subItemSelect.disabled = false;
+            otherDeptInput.style.display = 'none';
+            
+            // 填充细项选项
+            const items = deptStructure[category] || [];
+            let options = '<option value="">请选择细项</option>';
+            items.forEach(item => {
+                options += `<option value="${item}">${item}</option>`;
+            });
+            subItemSelect.innerHTML = options;
+        }
+    });
     
     // 清空所有数据按钮
     document.getElementById('clearAllBtn').addEventListener('click', handleClearAll);
@@ -508,15 +548,11 @@ async function handleSignIn() {
     }
     
     const name = nameInput.value.trim();
-    const employeeId = employeeIdInput.value.trim();
+    const employeeId = employeeIdInput.value.trim() || '-';
     const phone = phoneInput.value.trim();
     
     if (!name) {
         alert('请填写姓名！');
-        return;
-    }
-    if (!employeeId) {
-        alert('请填写工号！');
         return;
     }
     if (!phone) {
@@ -526,13 +562,12 @@ async function handleSignIn() {
     
     // 保存记录
     const today = formatDate(new Date());
-    const records = getRecords();
-    if (!records[today]) records[today] = [];
     
-    // 检查是否已签到
-    const existingIndex = records[today].findIndex(
-        r => r.department === department && r.name === name
-    );
+    // 检查该部门是否已签到（从服务器获取最新数据）
+    await fetchRecords(today);
+    const todayRecords = allRecords[today] || [];
+    const existingRecord = todayRecords.find(r => r.department === department);
+    const isAlreadySigned = existingRecord && !existingRecord.isDefault;
     
     const record = {
         department,
@@ -549,7 +584,7 @@ async function handleSignIn() {
     const success = await saveRecordToServer(today, record);
     if (!success) return;
     
-    if (existingIndex >= 0) {
+    if (isAlreadySigned) {
         alert('签到信息已更新！');
     } else {
         alert('签到成功！');
@@ -560,7 +595,6 @@ async function handleSignIn() {
     
     // 清空表单
     nameInput.value = '';
-    employeeIdInput.value = '';
     phoneInput.value = '';
 }
 
@@ -568,7 +602,9 @@ async function handleSignIn() {
 async function handleAdminAction() {
     const action = document.getElementById('adminAction').value;
     const date = document.getElementById('adminDate').value;
-    const department = document.getElementById('adminDept').value.trim();
+    const deptCategory = document.getElementById('adminDeptCategory').value;
+    const deptSubItem = document.getElementById('adminDeptSubItem').value;
+    const otherDept = document.getElementById('adminOtherDept').value.trim();
     const oldName = document.getElementById('adminOldName').value.trim();
     const newName = document.getElementById('adminNewName').value.trim();
     const newEmployeeId = document.getElementById('adminEmployeeId').value.trim();
@@ -581,9 +617,30 @@ async function handleAdminAction() {
         return;
     }
     
+    // 验证部门选择
+    if (!deptCategory) {
+        alert('请选择部门大类！');
+        return;
+    }
+    
+    let department;
+    if (deptCategory === '其他') {
+        department = otherDept;
+        if (!department) {
+            alert('请填写具体部门（起重维护/保安/保洁）！');
+            return;
+        }
+    } else {
+        if (!deptSubItem) {
+            alert('请选择部门细项！');
+            return;
+        }
+        department = `${deptCategory}-${deptSubItem}`;
+    }
+    
     // 验证必填项
-    if (!date || !department) {
-        alert('请填写日期和部门！');
+    if (!date) {
+        alert('请填写日期！');
         return;
     }
     
@@ -618,7 +675,7 @@ async function handleAdminAction() {
                 latitude: '',
                 longitude: '',
                 location: '管理员补签',
-                isAdminAdd: true  // 标记为管理员补签
+                isAdminAction: true  // 标记为管理员操作，跳过IP限制
             };
             
             // 保存到服务器
@@ -659,6 +716,7 @@ async function handleAdminAction() {
             if (newEmployeeId) modifiedRecord.employeeId = newEmployeeId;
             if (newPhone) modifiedRecord.phone = newPhone;
             modifiedRecord.isModified = true;  // 标记为已修改
+            modifiedRecord.isAdminAction = true;  // 标记为管理员操作，跳过IP限制
             
             // 如果姓名改变了，需要先删除旧记录，再添加新记录
             if (newName && newName !== oldName) {
@@ -711,6 +769,7 @@ async function handleAdminAction() {
     document.getElementById('adminEmployeeId').value = '';
     document.getElementById('adminNewPhone').value = '';
     document.getElementById('adminPassword').value = '';
+    // 注意：部门和日期保留，方便连续操作
 }
 
 // 处理清空所有数据
