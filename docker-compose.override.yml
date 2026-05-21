@@ -1,0 +1,15 @@
+# 开发环境覆盖配置
+# 生产环境不需要此文件
+
+version: '3.8'
+
+services:
+  signin-system:
+    build: .
+    volumes:
+      # 开发模式：实时同步代码
+      - .:/app
+      - /app/__pycache__
+    environment:
+      - DEBUG=1
+      - LOG_LEVEL=DEBUG

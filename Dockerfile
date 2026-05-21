@@ -1,12 +1,8 @@
-# 值班签到系统 Dockerfile
-# 多阶段构建，减小镜像体积
-
-# 阶段1：基础镜像
+# 多阶段构建 Dockerfile
+# 阶段1：基础依赖
 FROM python:3.9-slim as base
 
-# 设置时区
-ENV TZ=Asia/Shanghai
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+WORKDIR /app
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,60 +10,70 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 阶段2：认证服务
-FROM base as auth-service
+# 阶段2：认证服务依赖
+FROM base as auth-deps
+
+WORKDIR /app/login
 
 COPY login/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --user --no-cache-dir -r requirements.txt
 
-COPY login/ .
+# 阶段3：签到系统依赖
+FROM base as signin-deps
+
+WORKDIR /app
+
+# 创建 requirements.txt
+RUN echo "requests>=2.31.0" > requirements.txt
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# 阶段4：最终镜像
+FROM python:3.9-slim as production
+
+WORKDIR /app
+
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    cron \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 从构建阶段复制 Python 包
+COPY --from=auth-deps /root/.local /root/.local
+COPY --from=signin-deps /root/.local /root/.local
+
+# 确保使用本地安装的包
+ENV PATH=/root/.local/bin:$PATH
+ENV PYTHONPATH=/root/.local/lib/python3.9/site-packages:$PYTHONPATH
+
+# 创建必要的目录
+RUN mkdir -p /app/data /app/logs /app/backup /app/login/data
+
+# 复制应用代码
+COPY . .
+
+# 设置数据卷
+VOLUME ["/app/data", "/app/logs", "/app/backup"]
+
+# 暴露端口
+EXPOSE 3000 8001
 
 # 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8001/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3000 && curl -f http://localhost:8001/health || exit 1
 
-EXPOSE 8001
+# 启动脚本
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-CMD ["python", "attendance_login_only.py"]
-
-# 阶段3：签到系统
-FROM base as signin-service
-
-# 创建数据目录
-RUN mkdir -p /app/data
-
-# 复制签到系统文件
-COPY server_with_auth.py .
-COPY index.html .
-COPY script.js .
-COPY styles.css .
-COPY logo.png .
-COPY data.json ./data.json
-COPY mode.json ./mode.json
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000 || exit 1
-
-EXPOSE 3000
-
-CMD ["python", "server_with_auth.py"]
-
-# 阶段4：同步服务
-FROM base as sync-service
-
-COPY kdocs_sync/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY kdocs_sync/ .
-COPY data.json /app/data.json
-
-# 定时任务使用 cron
-RUN apt-get update && apt-get install -y cron
-
-# 添加定时任务
-RUN echo "0 20 * * * cd /app && python sync_via_webhook.py >> /var/log/sync.log 2>&1" | crontab -
-
-CMD ["cron", "-f"]
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["all"]

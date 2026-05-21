@@ -142,39 +142,6 @@ cd kdocs_sync
 python sync_via_webhook.py
 ```
 
-## Docker 部署
-
-### 方案一：GitHub Actions 自动构建（推荐）
-
-1. **Fork 仓库** 到个人 GitHub 账号
-2. **配置 Secrets**（详见 GITHUB_SECRETS.md）
-   - `DOCKER_USERNAME`: Docker Hub 用户名
-   - `DOCKER_PASSWORD`: Docker Hub 访问令牌
-3. **推送代码** 自动触发构建
-4. **服务器拉取** 镜像并运行
-
-### 方案二：手动构建部署
-
-```bash
-# 1. 构建镜像
-docker-compose build
-
-# 2. 推送到仓库（可选）
-docker-compose push
-
-# 3. 在服务器上部署
-scp deploy.sh root@server:/opt/signin-system/
-ssh root@server "cd /opt/signin-system && ./deploy.sh"
-```
-
-### 方案三：直接使用预构建镜像
-
-```bash
-# 服务器上执行
-export DOCKER_USERNAME=your-docker-username
-curl -sSL https://raw.githubusercontent.com/yourusername/signin-system/main/deploy.sh | bash
-```
-
 ## 版本历史
 
 ### v1.0 (当前版本)
