@@ -16,9 +16,15 @@
                 <img src="logo.png" alt="国家能源集团" class="logo-img">
             </div>
             <h1 class="title">南宁公司（<span id="titleDate"></span>）值班签到表</h1>
-            <div class="admin-mode-control">
-                <button id="adminModeBtn" class="btn btn-admin">管理员选项</button>
-                <div id="modeStatus" class="mode-status">当前模式：内网开放</div>
+            <div class="header-controls">
+                <div class="admin-mode-control">
+                    <button id="adminModeBtn" class="btn btn-admin">管理员选项</button>
+                    <div id="modeStatus" class="mode-status">当前模式：内网开放</div>
+                </div>
+                <div class="user-control">
+                    <span id="currentUserName" class="user-name"></span>
+                    <button id="logoutBtn" class="btn btn-logout">退出登录</button>
+                </div>
             </div>
         </header>
 

@@ -2,66 +2,294 @@
 
 此文件夹包含将本地签到数据同步到金山云文档的所有相关文件。
 
+## 官方文档
+
+- **AirScript 脚本令牌文档**: https://airsheet.wps.cn/docs/apitoken/api.html
+- **AirScript 语法文档**: https://airsheet.wps.cn/docs/guide/rules.html
+
 ## 文件说明
 
 ### Python 脚本
-- **sync_via_webhook.py** - 主同步脚本，通过 Webhook 方式同步数据
+- **sync_module.py** - 核心同步模块，提供同步功能供其他脚本调用
+- **sync_via_webhook.py** - 主同步脚本（使用 sync_module），通过 AirScript Webhook 同步数据
+- **sync_scheduler.py** - 定时任务调度器（使用 sync_module），每天自动执行同步
 
 ### AirScript 脚本（用于金山文档）
-- **airscript_final.js** - 最终版 AirScript 脚本（推荐）
-- **airscript_sync_task.js** - sync_task 版本
-- **airscript_webhook.js** - webhook 版本
+- **airscript_final.js** - 官方标准版 AirScript 脚本（推荐）
 
 ### 批处理文件
 - **同步到云文档.bat** - Windows 批处理文件，双击即可运行同步
+- **定时同步任务.bat** - 定时任务专用批处理文件
 
-### 数据文件
-- **data.json** - 签到数据文件（源数据）
+### PowerShell 脚本
+- **创建定时任务.ps1** - 自动创建 Windows 定时任务
+- **删除定时任务.ps1** - 删除 Windows 定时任务
+
+### 文档
+- **定时任务配置说明.md** - 详细的定时任务配置教程
+
+## 工作原理
+
+```
+┌─────────────────┐     HTTP POST      ┌─────────────────┐     ┌─────────────────┐
+│  Python 脚本    │ ─────────────────> │  AirScript      │ ──> │  金山文档表格   │
+│  (本地运行)     │   Webhook + Token  │  (云端执行)     │     │  (数据写入)     │
+└─────────────────┘                    └─────────────────┘     └─────────────────┘
+```
+
+### 参数传递方式
+
+根据 AirScript 官方文档，外部调用时参数通过 `Context.argv` 传递：
+
+**Python 端发送：**
+```json
+{
+  "Context": {
+    "argv": {
+      "data": [["日期", "部门", "姓名"], ["2025-01-12", "技术部", "张三"]],
+      "sync_time": "2025-01-12 10:00:00",
+      "total_rows": 1
+    }
+  }
+}
+```
+
+**AirScript 端接收：**
+```javascript
+var params = Context.argv;
+var data = params.data;
+```
 
 ## 使用方法
 
-### 方法一：命令行运行
+### 方法一：手动同步（立即执行）
+
+**命令行运行：**
 ```bash
+cd kdocs_sync
 python sync_via_webhook.py
 ```
 
-### 方法二：双击批处理文件
+**双击批处理文件：**
 双击运行 `同步到云文档.bat`
+
+### 方法二：定时自动同步（推荐）
+
+每天晚上 **20:00** 自动执行同步。
+
+**快速设置（自动）：**
+
+1. 右键点击 PowerShell 脚本，选择【使用 PowerShell 运行】
+2. 运行 `创建定时任务.ps1`
+3. 按提示完成设置
+
+**手动设置：**
+
+详见 [定时任务配置说明.md](定时任务配置说明.md)
+
+**管理定时任务：**
+
+- **查看任务**：打开任务计划程序（`taskschd.msc`）
+- **立即运行**：在任务计划程序中找到【签到数据云同步】→ 右键 → 运行
+- **删除任务**：运行 `删除定时任务.ps1` 或在任务计划程序中删除
+
+### 方法三：Python 定时调度器
+
+**启动定时任务：**
+```bash
+cd kdocs_sync
+python sync_scheduler.py
+```
+
+此命令会启动一个后台进程，每天 20:00 自动执行同步。
+
+**参数说明：**
+```bash
+# 立即执行一次同步
+python sync_scheduler.py --now
+
+# 自定义同步时间（例如 21:30）
+python sync_scheduler.py --time 21:30
+```
+
+**停止定时任务：**
+按 `Ctrl + C` 停止定时调度器。
+
+### 方法四：实时自动同步（签到后立即同步）
+
+签到系统已集成自动同步功能，每次有人签到后会自动将当天数据同步到云文档。
+
+**工作原理：**
+- 用户签到成功 → 服务器自动调用同步模块 → 当天数据同步到云文档
+- 同步在后台异步执行，不影响签到响应速度
+- 控制台会显示同步日志：`[自动同步] 当天签到数据 同步成功...`
+
+**开关控制：**
+在 `server_with_auth.py` 中设置：
+```python
+# 自动同步到云文档开关
+ENABLE_AUTO_SYNC = True   # True=启用, False=禁用
+```
+
+**注意事项：**
+- 自动同步仅同步当天的签到数据
+- 不会影响定时任务（每天晚上8点的全量同步）
+- 如果同步失败，会在控制台显示错误信息，但不会中断签到流程
+
+## 数据完整性保障
+
+系统通过以下机制确保每天都有数据记录：
+
+### 1. 访问页面时自动创建
+- 用户访问签到页面时，系统自动检查并创建当天的空记录
+- 确保 `data.json` 中每天都有数据，即使没有人签到
+
+### 2. 签到时自动创建
+- 用户签到时，如果当天还没有记录，自动创建空记录后再进行签到
+- 适用于一整天都没人访问页面的情况
+
+### 3. 同步时自动创建
+- 定时任务执行同步前，自动检查并创建当天的空记录
+- 确保云文档中每天都有完整的部门列表（已签到和未签到）
+
+### 控制台输出示例
+```
+[数据初始化] 创建 2026-05-18 的空记录
+[自动同步] 当天签到数据 同步成功，共 25 行数据
+```
+
+## 并发安全保护
+
+系统实现了多重并发保护机制，防止数据覆盖：
+
+### 1. 原子写操作
+- 数据先写入临时文件（`data.json.tmp`）
+- 然后通过原子重命名操作替换原文件
+- 确保写操作是"全有或全无"，不会出现半写状态
+
+### 2. 重试机制
+- 读取和写入都有重试机制（最多5次）
+- 如果文件被占用，自动等待后重试
+- 等待时间递增（0.1s, 0.2s, 0.3s...）
+
+### 3. 线程锁（同步模块）
+- `sync_module.py` 使用线程锁保护多线程并发
+- 确保同一进程内的多个线程不会同时写文件
+
+### 并发场景处理
+
+| 场景 | 保护措施 | 结果 |
+|-----|---------|------|
+| 定时任务 + 用户同时签到 | 原子写 + 重试 | 数据不会丢失 |
+| 两个用户同时签到 | 原子写 + 重试 | 两个签到都保存 |
+| 读取时被写入 | 重试读取 | 读取最新数据 |
+
+**注意：** 虽然做了并发保护，但仍建议避免在定时任务执行时（20:00）进行签到操作，以减少冲突概率。
 
 ## 配置步骤
 
 ### 1. 在金山文档中创建 AirScript 脚本
-1. 打开文档：https://www.kdocs.cn/l/cqrKey08JOk2
+
+1. 打开目标表格文档
 2. 点击【工具】→【脚本】→【新建脚本】
 3. 复制 `airscript_final.js` 的内容到编辑器
-4. 按 Ctrl+S 保存
+4. 按 **Ctrl+S** 保存脚本
 
 ### 2. 发布 Webhook
+
 1. 点击【发布】→【Webhook】
 2. 确认入口函数是 `sync_task`
 3. 点击【生成 Webhook URL】
-4. 复制 URL
+4. 复制 URL，替换 `sync_module.py` 中的 `AIRSCRIPT_WEBHOOK_URL`
 
-### 3. 获取脚本令牌
-1. 点击【发布】→【脚本令牌】
-2. 生成新的令牌
-3. 复制令牌
-
-### 4. 配置 Python 脚本
-编辑 `sync_via_webhook.py`，填写：
-```python
-AIRSCRIPT_WEBHOOK_URL = "https://www.kdocs.cn/api/v3/ide/file/xxx/script/xxx/sync_task"
-AIRSCRIPT_TOKEN = "你的脚本令牌"
+**Webhook URL 格式：**
+```
+https://www.kdocs.cn/api/v3/ide/file/{file_id}/script/{script_id}/sync_task
 ```
 
-### 5. 测试同步
-运行脚本，检查云文档是否更新。
+### 3. 获取脚本令牌 (APIToken)
+
+1. 点击【发布】→【脚本令牌】
+2. 生成新的令牌
+3. 复制令牌，替换 `sync_module.py` 中的 `AIRSCRIPT_TOKEN`
+
+### 4. 测试 AirScript 脚本
+
+在 AirScript 编辑器中：
+1. 点击【运行】按钮（脚本底部有 `test()` 调用）
+2. 查看运行结果和日志输出
+3. 检查表格是否正确写入测试数据
+
+**注意：** AirScript 编辑器中点击【运行】会执行整个脚本，所以 `airscript_final.js` 底部调用了 `test()` 函数用于测试。
+
+### 5. 运行同步
+
+```bash
+python sync_via_webhook.py
+```
+
+## 数据格式
+
+同步到云文档的数据包含以下字段：
+
+| 字段 | 说明 |
+|------|------|
+| 日期 | 签到日期 |
+| 部门 | 部门大类-部门细项 |
+| 姓名 | 签到人姓名 |
+| 工号 | 员工工号 |
+| 电话 | 联系电话 |
+| 签到时间 | 完整的签到时间戳 |
+| 是否迟到 | 20:00后签到标记为"是" |
+
+## 常见问题
+
+### 1. 同步失败，提示 "无法获取表格"
+- 确保云文档中包含至少一个表格
+- 检查文档是否已保存
+
+### 2. 同步失败，提示 "未接收到参数"
+- 检查 Python 脚本发送的数据格式是否正确（必须包含 `Context.argv`）
+- 检查 AirScript 脚本获取参数的方式是否正确（使用 `Context.argv`）
+
+### 3. HTTP 401 错误
+- 检查 `AIRSCRIPT_TOKEN` 是否正确
+- 检查脚本令牌是否已过期，如过期需重新生成
+
+### 4. HTTP 404 错误
+- 检查 `AIRSCRIPT_WEBHOOK_URL` 是否正确
+- 确保 Webhook 已发布
+
+### 5. 中文乱码
+- 脚本已支持多种编码（UTF-8、GBK、GB2312）自动检测
+- 如果仍有问题，请检查原始数据文件的编码格式
+
+## 调试方法
+
+### 在 AirScript 中查看日志
+1. 打开 AirScript 编辑器
+2. 点击【查看】→【日志】
+3. 重新运行同步，查看实时日志输出
+
+### 测试 AirScript 脚本
+在 AirScript 编辑器中点击【运行】按钮，验证脚本是否正常工作。
+
+### 测试 Python 脚本
+```bash
+python sync_via_webhook.py
+```
+查看输出的 HTTP 状态码和响应内容。
 
 ## 注意事项
 
-- AirScript 使用 JavaScript 语言，不是 Python
-- 确保 Webhook URL 和脚本令牌正确配置
-- 如果同步失败，检查网络连接和文档权限
+- AirScript 使用 **JavaScript** 语言（ES6 语法），不是 Python
+- **不要**在 AirScript 脚本中直接调用 `test()` 函数进行生产环境部署（测试完成后注释掉）
+- Webhook URL 和脚本令牌需要保密，不要泄露给他人
+- 每次同步会清空表格原有数据，请确保云文档中的数据已备份（如果需要）
+- 如果同步失败，请查看 Python 脚本和 AirScript 的日志进行排查
 
-## 云文档链接
-https://www.kdocs.cn/l/cqrKey08JOk2
+## 参考链接
+
+- **AirScript 官方文档**: https://airsheet.wps.cn/docs/
+- **脚本令牌文档**: https://airsheet.wps.cn/docs/apitoken/api.html
+- **AirScript 语法**: https://airsheet.wps.cn/docs/guide/rules.html

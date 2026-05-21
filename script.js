@@ -59,14 +59,265 @@ const fixedTableLayout = [
     }
 ];
 
+// 当前用户信息
+let currentUser = null;
+
+// 会话超时设置（30分钟）
+const SESSION_TIMEOUT = 30 * 60 * 1000; // 30分钟，单位毫秒
+let lastActivityTime = Date.now();
+let sessionCheckInterval = null;
+
 // 初始化
 async function init() {
     updateTime();
     setInterval(updateTime, 1000);
+    
+    // 获取当前用户信息
+    await loadUserInfo();
+    
+    // 根据用户权限设置界面
+    setupUIBasedOnPermissions();
+    
+    // 设置用户信息显示和退出按钮
+    setupUserControl();
+    
+    // 启动会话超时检测
+    startSessionTimeoutCheck();
+    
     await loadModeSettings(); // 加载签到模式设置
     await loadTodayRecords();
     setupEventListeners();
     setDefaultDates();
+}
+
+// 设置用户控制区域
+function setupUserControl() {
+    const userNameSpan = document.getElementById('currentUserName');
+    const logoutBtn = document.getElementById('logoutBtn');
+    
+    if (userNameSpan && currentUser) {
+        userNameSpan.textContent = currentUser.name || currentUser.id || '用户';
+    }
+    
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+    }
+}
+
+// 处理退出登录
+async function handleLogout() {
+    if (!confirm('确定要退出登录吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/logout`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+        
+        // 清除本地状态
+        currentUser = null;
+        
+        // 停止会话检测
+        if (sessionCheckInterval) {
+            clearInterval(sessionCheckInterval);
+            sessionCheckInterval = null;
+        }
+        
+        // 重定向到登录页面
+        window.location.href = '/login.html';
+        
+    } catch (error) {
+        console.error('退出登录出错:', error);
+        alert('退出登录失败，请重试');
+    }
+}
+
+// 更新活动时间
+function updateActivityTime() {
+    lastActivityTime = Date.now();
+}
+
+// 启动会话超时检测
+function startSessionTimeoutCheck() {
+    // 监听用户活动
+    document.addEventListener('click', updateActivityTime);
+    document.addEventListener('keypress', updateActivityTime);
+    document.addEventListener('mousemove', updateActivityTime);
+    document.addEventListener('scroll', updateActivityTime);
+    
+    // 每分钟检查一次是否超时
+    sessionCheckInterval = setInterval(() => {
+        const inactiveTime = Date.now() - lastActivityTime;
+        
+        if (inactiveTime >= SESSION_TIMEOUT) {
+            // 会话超时，自动退出
+            console.log('会话超时，自动退出登录');
+            handleSessionTimeout();
+        } else if (inactiveTime >= SESSION_TIMEOUT - 5 * 60 * 1000) {
+            // 超时前5分钟提醒
+            const remainingMinutes = Math.ceil((SESSION_TIMEOUT - inactiveTime) / 60000);
+            console.log(`会话将在 ${remainingMinutes} 分钟后过期`);
+        }
+    }, 60000); // 每分钟检查一次
+}
+
+// 处理会话超时
+async function handleSessionTimeout() {
+    // 停止检测
+    if (sessionCheckInterval) {
+        clearInterval(sessionCheckInterval);
+        sessionCheckInterval = null;
+    }
+    
+    // 显示超时提示
+    alert('您已长时间未操作，会话已过期，请重新登录。');
+    
+    try {
+        // 调用后端退出
+        await fetch(`${API_BASE}/logout`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+    } catch (error) {
+        console.error('会话超时退出出错:', error);
+    }
+    
+    // 重定向到登录页面
+    window.location.href = '/login.html';
+}
+
+// 获取当前用户信息
+async function loadUserInfo() {
+    try {
+        const response = await fetch(`${API_BASE}/api/user/info`);
+        if (response.ok) {
+            currentUser = await response.json();
+            console.log('当前用户:', currentUser);
+            // 自动填入用户姓名到签到表单
+            autoFillUserName();
+        } else {
+            console.error('获取用户信息失败');
+        }
+    } catch (error) {
+        console.error('获取用户信息出错:', error);
+    }
+}
+
+// 自动填入用户姓名到签到表单
+function autoFillUserName() {
+    // 管理员不自动填写任何信息
+    if (currentUser && currentUser.is_admin) {
+        console.log('管理员登录，不自动填写信息');
+        return;
+    }
+    
+    // 外委账号不自动填写姓名（需要用户自己填写真实姓名）
+    if (currentUser && currentUser.is_external) {
+        console.log('外委账号登录，不自动填写姓名，需要用户自行填写');
+        // 外委账号自动填写部门信息
+        autoFillExternalUserDept();
+        return;
+    }
+    
+    // 普通OA用户自动填写姓名
+    if (currentUser && currentUser.name) {
+        const nameInput = document.getElementById('name');
+        if (nameInput) {
+            nameInput.value = currentUser.name;
+            nameInput.readOnly = true;  // 禁用修改
+            nameInput.style.backgroundColor = '#f0f0f0';  // 灰色背景表示只读
+            console.log('已自动填入姓名:', currentUser.name);
+        }
+    }
+}
+
+// 自动填写外委账号的部门信息
+function autoFillExternalUserDept() {
+    if (!currentUser || !currentUser.dept_category || !currentUser.dept_subitem) {
+        return;
+    }
+    
+    const deptCategory = currentUser.dept_category;
+    const deptSubitem = currentUser.dept_subitem;
+    
+    // 设置部门大类
+    const deptCategorySelect = document.getElementById('deptCategory');
+    const deptSubItemSelect = document.getElementById('deptSubItem');
+    const otherDeptInput = document.getElementById('otherDept');
+    
+    if (deptCategorySelect) {
+        deptCategorySelect.value = deptCategory;
+        deptCategorySelect.disabled = true;  // 禁用修改
+        deptCategorySelect.style.backgroundColor = '#f0f0f0';
+    }
+    
+    // 直接设置部门细项（不通过事件触发）
+    if (deptCategory === '其他') {
+        // 其他部门：显示文本输入框并填入细项
+        if (deptSubItemSelect) {
+            deptSubItemSelect.disabled = true;
+            deptSubItemSelect.innerHTML = '<option value="">请直接填写</option>';
+        }
+        if (otherDeptInput) {
+            otherDeptInput.style.display = 'inline-block';
+            otherDeptInput.placeholder = '填写：起重维护/保安/保洁';
+            otherDeptInput.value = deptSubitem;
+            otherDeptInput.readOnly = true;
+            otherDeptInput.style.backgroundColor = '#f0f0f0';
+        }
+    } else {
+        // 标准部门：直接填充细项选项并选中
+        if (deptSubItemSelect) {
+            deptSubItemSelect.disabled = false;
+            otherDeptInput.style.display = 'none';
+            
+            // 直接填充细项选项
+            const items = deptStructure[deptCategory] || [];
+            let options = '<option value="">请选择细项</option>';
+            items.forEach(item => {
+                options += `<option value="${item}">${item}</option>`;
+            });
+            deptSubItemSelect.innerHTML = options;
+            
+            // 选中对应的细项
+            deptSubItemSelect.value = deptSubitem;
+            deptSubItemSelect.disabled = true;
+            deptSubItemSelect.style.backgroundColor = '#f0f0f0';
+        }
+    }
+    
+    console.log('已自动填入部门:', deptCategory, '-', deptSubitem);
+}
+
+// 根据用户权限设置界面
+function setupUIBasedOnPermissions() {
+    const isAdmin = currentUser && currentUser.is_admin;
+    
+    // 管理员选项按钮
+    const adminModeBtn = document.getElementById('adminModeBtn');
+    if (adminModeBtn) {
+        adminModeBtn.style.display = isAdmin ? 'inline-block' : 'none';
+    }
+    
+    // 管理员操作区域
+    const adminSection = document.querySelector('.admin-section');
+    if (adminSection) {
+        adminSection.style.display = isAdmin ? 'block' : 'none';
+    }
+    
+    // 导出全部数据按钮（仅管理员）
+    const exportAllBtn = document.getElementById('exportAllBtn');
+    if (exportAllBtn) {
+        exportAllBtn.style.display = isAdmin ? 'inline-block' : 'none';
+    }
+    
+    // 清空所有数据按钮（仅管理员）
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    if (clearAllBtn) {
+        clearAllBtn.style.display = isAdmin ? 'inline-block' : 'none';
+    }
 }
 
 // 更新时间
@@ -308,8 +559,12 @@ function renderSignInTable(records) {
             }
         });
         
-        // 渲染该大类下的所有细项（双列布局）
-        for (let i = 0; i < expandedItems.length; i += 2) {
+        // 判断是否为单列布局（公司值班需要单列显示）
+        const isSingleColumn = group.category === '公司值班';
+        
+        // 渲染该大类下的所有细项
+        const step = isSingleColumn ? 1 : 2;
+        for (let i = 0; i < expandedItems.length; i += step) {
             const row = document.createElement('tr');
             
             // 左列
@@ -336,8 +591,8 @@ function renderSignInTable(records) {
                 `;
             }
             
-            // 右列
-            if (expandedItems[i + 1]) {
+            // 右列（仅双列布局时显示）
+            if (!isSingleColumn && expandedItems[i + 1]) {
                 const rightItem = expandedItems[i + 1];
                 const rightRecord = recordMap[rightItem.deptKey];
                 
@@ -360,9 +615,12 @@ function renderSignInTable(records) {
                         <td>-</td>
                     `;
                 }
-            } else {
-                // 没有右列，填充空单元格
+            } else if (!isSingleColumn) {
+                // 双列布局但没有右列，填充空单元格
                 row.innerHTML += '<td></td><td></td><td></td><td></td>';
+            } else {
+                // 单列布局，填充右侧空白（白色背景）
+                row.innerHTML += '<td colspan="4"></td>';
             }
             
             tbody.appendChild(row);
@@ -611,7 +869,13 @@ async function handleAdminAction() {
     const newPhone = document.getElementById('adminNewPhone').value.trim();
     const password = document.getElementById('adminPassword').value;
     
-    // 验证密码
+    // 验证是否是管理员（使用后端返回的权限）
+    if (!currentUser || !currentUser.is_admin) {
+        alert('权限不足，只有管理员可以执行此操作！');
+        return;
+    }
+    
+    // 保留本地密码验证作为二次确认
     if (password !== ADMIN_PASSWORD) {
         alert('管理员密码错误！');
         return;

@@ -1,0 +1,68 @@
+{
+  "D_bjtj": {
+    "password": "ww123",
+    "dept_category": "D标",
+    "dept_subitem": "北京腾疆",
+    "name": "北京腾疆"
+  },
+  "A_guanli": {
+    "password": "ww123",
+    "dept_category": "A标",
+    "dept_subitem": "管理",
+    "name": "A标管理"
+  },
+  "A_qiji": {
+    "password": "ww123",
+    "dept_category": "A标",
+    "dept_subitem": "汽机",
+    "name": "A标汽机"
+  },
+  "A_guolu": {
+    "password": "ww123",
+    "dept_category": "A标",
+    "dept_subitem": "锅炉",
+    "name": "A标锅炉"
+  },
+  "A_dianqi": {
+    "password": "ww123",
+    "dept_category": "A标",
+    "dept_subitem": "电气",
+    "name": "A标电气"
+  },
+  "A_rekong": {
+    "password": "ww123",
+    "dept_category": "A标",
+    "dept_subitem": "热控",
+    "name": "A标热控"
+  },
+  "A_shumei": {
+    "password": "ww123",
+    "dept_category": "A标",
+    "dept_subitem": "输煤",
+    "name": "A标输煤"
+  },
+  "A_liuxiao": {
+    "password": "ww123",
+    "dept_category": "A标",
+    "dept_subitem": "硫硝",
+    "name": "A标硫硝"
+  },
+  "Q_qzwh": {
+    "password": "ww123",
+    "dept_category": "其他",
+    "dept_subitem": "起重维护",
+    "name": "起重维护"
+  },
+  "Q_ba": {
+    "password": "ww123",
+    "dept_category": "其他",
+    "dept_subitem": "保安",
+    "name": "保安"
+  },
+  "Q_bj": {
+    "password": "ww123",
+    "dept_category": "其他",
+    "dept_subitem": "保洁",
+    "name": "保洁"
+  }
+}

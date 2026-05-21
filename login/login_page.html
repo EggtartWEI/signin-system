@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>考勤登录</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            min-height: 100vh; display: flex; justify-content: center; align-items: center;
+            padding: 20px;
+        }
+        .card {
+            background: white; border-radius: 16px; padding: 32px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 100%; max-width: 400px;
+        }
+        h1 { text-align: center; color: #333; margin-bottom: 8px; font-size: 24px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 24px; font-size: 14px; }
+        .status {
+            padding: 12px; border-radius: 8px; text-align: center;
+            margin-bottom: 20px; font-weight: 500; font-size: 14px;
+        }
+        .status.ok { background: #d1fae5; color: #065f46; }
+        .status.no { background: #fee2e2; color: #991b1b; }
+        .status.loading { background: #e0e7ff; color: #3730a3; }
+        .admin-contact {
+            margin-top: 18px;
+            padding: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #f9fafb;
+            color: #374151;
+            font-size: 13px;
+        }
+        .admin-contact h2 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #111827;
+        }
+        .contact-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .contact-label { color: #6b7280; }
+        .muted { color: #9ca3af; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 6px; color: #374151; font-weight: 500; font-size: 14px; }
+        input, select {
+            width: 100%; padding: 12px; border: 2px solid #e5e7eb;
+            border-radius: 8px; font-size: 16px; transition: border-color 0.2s;
+        }
+        input:focus, select:focus { outline: none; border-color: #667eea; }
+        .btn-group { display: flex; gap: 10px; }
+        button {
+            flex: 1; padding: 14px; border: none; border-radius: 8px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(102,126,234,0.4); }
+        .btn-secondary { background: #f3f4f6; color: #374151; }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .btn-text {
+            background: none; border: none; color: #667eea; font-size: 14px;
+            cursor: pointer; padding: 8px; text-decoration: underline;
+        }
+        .btn-text:hover { color: #764ba2; }
+        button:disabled { background: #9ca3af; transform: none; box-shadow: none; cursor: wait; }
+        .msg { margin-top: 16px; text-align: center; font-size: 14px; min-height: 20px; }
+        .msg.ok { color: #059669; }
+        .msg.err { color: #dc2626; }
+        .hidden { display: none; }
+        
+        /* 密码管理相关样式 */
+        .password-actions {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        .password-actions-title {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 12px;
+        }
+        .password-form {
+            margin-top: 16px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+        .password-form h3 {
+            font-size: 16px;
+            margin-bottom: 16px;
+            color: #111827;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 16px;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover { text-decoration: underline; }
+        .login-type-selector {
+            margin-bottom: 20px;
+        }
+        .login-type-selector label {
+            display: inline-block;
+            margin-right: 20px;
+            cursor: pointer;
+        }
+        .login-type-selector input[type="radio"] {
+            width: auto;
+            margin-right: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <!-- 登录界面 -->
+        <div id="login-section">
+            <h1>🔐 考勤登录</h1>
+            <p class="subtitle">连接 AWS OA 系统</p>
+            
+            <div class="login-type-selector">
+                <label><input type="radio" name="loginType" value="oa" checked onchange="switchLoginType('oa')"> OA账号登录</label>
+                <label><input type="radio" name="loginType" value="external" onchange="switchLoginType('external')"> 外委账号登录</label>
+            </div>
+            
+            <div id="whitelist-status" class="status loading">正在检测白名单状态...</div>
+            
+            <form id="form" autocomplete="off">
+                <div class="form-group">
+                    <label id="userLabel">AWS OA 账号</label>
+                    <input type="text" id="user" required placeholder="工号或用户名" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="pass" required placeholder="密码" autocomplete="current-password">
+                </div>
+                <button type="submit" id="btn" class="btn-primary" style="width: 100%;">🚀 登录</button>
+            </form>
+            
+            <div id="msg" class="msg"></div>
+            
+            <!-- 外委账号密码管理 -->
+            <div id="external-password-actions" class="password-actions hidden">
+                <div class="password-actions-title">外委账号密码管理</div>
+                <button type="button" class="btn-text" onclick="showChangePassword()">修改密码</button>
+                <button type="button" class="btn-text" onclick="showResetPassword()">重置密码</button>
+            </div>
+            
+            <div id="admin-contact" class="admin-contact hidden">
+                <h2>管理员联系方式</h2>
+                <div class="contact-row">
+                    <span class="contact-label">联系人</span>
+                    <span id="contact-name"></span>
+                </div>
+                <div class="contact-row">
+                    <span class="contact-label">电话</span>
+                    <span id="contact-phone"></span>
+                </div>
+                <div class="contact-row">
+                    <span class="contact-label">邮箱</span>
+                    <span id="contact-email"></span>
+                </div>
+                <div id="contact-empty" class="muted hidden">管理员联系方式未配置</div>
+            </div>
+        </div>
+        
+        <!-- 修改密码界面 -->
+        <div id="change-password-section" class="hidden">
+            <h1>🔑 修改密码</h1>
+            <p class="subtitle">外委账号修改密码</p>
+            
+            <form id="change-password-form" class="password-form">
+                <div class="form-group">
+                    <label>账号</label>
+                    <input type="text" id="change-username" required placeholder="外委账号">
+                </div>
+                <div class="form-group">
+                    <label>原密码</label>
+                    <input type="password" id="change-old-password" required placeholder="原密码">
+                </div>
+                <div class="form-group">
+                    <label>新密码</label>
+                    <input type="password" id="change-new-password" required placeholder="新密码（至少6位）" minlength="6">
+                </div>
+                <div class="form-group">
+                    <label>确认新密码</label>
+                    <input type="password" id="change-confirm-password" required placeholder="再次输入新密码">
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%;">确认修改</button>
+            </form>
+            
+            <div id="change-msg" class="msg"></div>
+            <a href="#" class="back-link" onclick="showLogin()">← 返回登录</a>
+        </div>
+        
+        <!-- 重置密码界面 -->
+        <div id="reset-password-section" class="hidden">
+            <h1>🔄 重置密码</h1>
+            <p class="subtitle">外委账号重置密码</p>
+            
+            <form id="reset-password-form" class="password-form">
+                <div class="form-group">
+                    <label>账号</label>
+                    <input type="text" id="reset-username" required placeholder="外委账号">
+                </div>
+                <div class="form-group">
+                    <label>接收邮箱</label>
+                    <input type="email" id="reset-email" required placeholder="用于接收新密码的邮箱">
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%;">发送重置邮件</button>
+            </form>
+            
+            <div id="reset-msg" class="msg"></div>
+            <a href="#" class="back-link" onclick="showLogin()">← 返回登录</a>
+        </div>
+    </div>
+    
+    <script>
+        const RSA_MODULUS_HEX = "__RSA_MODULUS_HEX__";
+        const RSA_EXPONENT = "__RSA_EXPONENT__";
+        const WHITELIST_ENABLED = __WHITELIST_ENABLED__;
+        const $ = id => document.getElementById(id);
+        const hasCrypto = () => !!(window.crypto && window.crypto.getRandomValues);
+        
+        let currentLoginType = 'oa';
+
+        function bytesToHex(bytes) {
+            let hex = '';
+            for (let i = 0; i < bytes.length; i++) {
+                hex += bytes[i].toString(16).padStart(2, '0');
+            }
+            return hex;
+        }
+
+        function modPow(base, exp, mod) {
+            let result = 1n;
+            let b = base % mod;
+            let e = exp;
+            while (e > 0n) {
+                if (e & 1n) {
+                    result = (result * b) % mod;
+                }
+                e >>= 1n;
+                b = (b * b) % mod;
+            }
+            return result;
+        }
+
+        function rsaEncrypt(message) {
+            if (!RSA_MODULUS_HEX || !RSA_EXPONENT) {
+                throw new Error('服务端未配置加密公钥');
+            }
+            if (!hasCrypto() || typeof BigInt !== 'function') {
+                throw new Error('浏览器不支持密码加密');
+            }
+            const encoder = new TextEncoder();
+            const m = encoder.encode(message);
+            const k = Math.ceil(RSA_MODULUS_HEX.length / 2);
+            if (m.length > k - 11) {
+                throw new Error('密码过长');
+            }
+            const psLen = k - m.length - 3;
+            const ps = new Uint8Array(psLen);
+            let i = 0;
+            while (i < psLen) {
+                const buf = new Uint8Array(psLen - i);
+                crypto.getRandomValues(buf);
+                for (let j = 0; j < buf.length && i < psLen; j++) {
+                    if (buf[j] !== 0) {
+                        ps[i++] = buf[j];
+                    }
+                }
+            }
+            const em = new Uint8Array(k);
+            em[0] = 0x00;
+            em[1] = 0x02;
+            em.set(ps, 2);
+            em[2 + psLen] = 0x00;
+            em.set(m, 3 + psLen);
+            const emHex = bytesToHex(em);
+            const mBig = BigInt('0x' + emHex);
+            const n = BigInt('0x' + RSA_MODULUS_HEX);
+            const e = BigInt(RSA_EXPONENT);
+            const c = modPow(mBig, e, n);
+            return c.toString(16).padStart(k * 2, '0');
+        }
+
+        function setWhitelistStatus() {
+            const statusEl = $('whitelist-status');
+            if (!statusEl) return;
+            if (WHITELIST_ENABLED) {
+                statusEl.className = 'status ok';
+                statusEl.textContent = '白名单验证已启用';
+            } else {
+                statusEl.className = 'status no';
+                statusEl.textContent = '白名单验证未启用';
+            }
+        }
+
+        function renderAdminContact(contact) {
+            const container = $('admin-contact');
+            const nameEl = $('contact-name');
+            const phoneEl = $('contact-phone');
+            const emailEl = $('contact-email');
+            const emptyEl = $('contact-empty');
+            
+            if (!contact || (!contact.name && !contact.phone && !contact.email)) {
+                container.classList.remove('hidden');
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+            
+            container.classList.remove('hidden');
+            emptyEl.classList.add('hidden');
+            nameEl.textContent = contact.name || '-';
+            phoneEl.textContent = contact.phone || '-';
+            emailEl.textContent = contact.email || '-';
+        }
+
+        // 切换登录类型
+        function switchLoginType(type) {
+            currentLoginType = type;
+            const userLabel = $('userLabel');
+            const externalActions = $('external-password-actions');
+            
+            if (type === 'external') {
+                userLabel.textContent = '外委账号';
+                externalActions.classList.remove('hidden');
+            } else {
+                userLabel.textContent = 'AWS OA 账号';
+                externalActions.classList.add('hidden');
+            }
+        }
+
+        // 显示修改密码界面
+        function showChangePassword() {
+            $('login-section').classList.add('hidden');
+            $('change-password-section').classList.remove('hidden');
+            $('reset-password-section').classList.add('hidden');
+        }
+
+        // 显示重置密码界面
+        function showResetPassword() {
+            $('login-section').classList.add('hidden');
+            $('change-password-section').classList.add('hidden');
+            $('reset-password-section').classList.remove('hidden');
+        }
+
+        // 显示登录界面
+        function showLogin() {
+            $('login-section').classList.remove('hidden');
+            $('change-password-section').classList.add('hidden');
+            $('reset-password-section').classList.add('hidden');
+        }
+
+        // 修改密码
+        $('change-password-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const msgEl = $('change-msg');
+            
+            const username = $('change-username').value.trim();
+            const oldPassword = $('change-old-password').value;
+            const newPassword = $('change-new-password').value;
+            const confirmPassword = $('change-confirm-password').value;
+            
+            if (newPassword !== confirmPassword) {
+                msgEl.className = 'msg err';
+                msgEl.textContent = '两次输入的新密码不一致';
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                msgEl.className = 'msg err';
+                msgEl.textContent = '新密码长度不能少于6位';
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('username', username);
+                formData.append('old_password', oldPassword);
+                formData.append('new_password', newPassword);
+                
+                const resp = await fetch('/api/external/change-password', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await resp.json();
+                
+                if (resp.ok) {
+                    msgEl.className = 'msg ok';
+                    msgEl.textContent = '密码修改成功，请使用新密码登录';
+                    setTimeout(() => showLogin(), 2000);
+                } else {
+                    msgEl.className = 'msg err';
+                    msgEl.textContent = result.detail || '密码修改失败';
+                }
+            } catch (err) {
+                msgEl.className = 'msg err';
+                msgEl.textContent = '网络错误，请稍后重试';
+            }
+        });
+
+        // 重置密码
+        $('reset-password-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const msgEl = $('reset-msg');
+            
+            const username = $('reset-username').value.trim();
+            const email = $('reset-email').value.trim();
+            
+            try {
+                const formData = new FormData();
+                formData.append('username', username);
+                formData.append('email', email);
+                
+                const resp = await fetch('/api/external/reset-password', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await resp.json();
+                
+                if (resp.ok) {
+                    msgEl.className = 'msg ok';
+                    msgEl.textContent = '重置密码邮件已发送，请查收邮箱';
+                    setTimeout(() => showLogin(), 3000);
+                } else {
+                    msgEl.className = 'msg err';
+                    msgEl.textContent = result.detail || '重置密码失败';
+                }
+            } catch (err) {
+                msgEl.className = 'msg err';
+                msgEl.textContent = '网络错误，请稍后重试';
+            }
+        });
+
+        // 原有登录逻辑
+        $('form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = $('btn');
+            const msg = $('msg');
+            btn.disabled = true;
+            msg.className = 'msg';
+            msg.textContent = '';
+            
+            try {
+                const user = $('user').value.trim();
+                const pass = $('pass').value;
+                
+                if (!user || !pass) {
+                    throw new Error('请输入用户名和密码');
+                }
+                
+                const formData = new FormData();
+                formData.append('username', user);
+                
+                // 判断账号类型：OA账号需要加密，外委账号和管理员使用明文
+                // 外委账号特征：以 D_、A_、Q_ 开头，或等于 admin
+                const isLocalAccount = user === 'admin' || 
+                                       user.startsWith('D_') || 
+                                       user.startsWith('A_') || 
+                                       user.startsWith('Q_');
+                
+                if (isLocalAccount) {
+                    // 外委账号和管理员：明文传输
+                    formData.append('password', pass);
+                    // 不设置 password_encrypted，后端会当作明文处理
+                } else {
+                    // OA账号：RSA加密
+                    let encryptedPass;
+                    try {
+                        encryptedPass = rsaEncrypt(pass);
+                    } catch (err) {
+                        throw new Error('密码加密失败: ' + err.message);
+                    }
+                    formData.append('password', encryptedPass);
+                    formData.append('password_encrypted', 'true');
+                }
+                
+                const resp = await fetch('/api/login', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await resp.json();
+                
+                if (resp.ok && result.status === 'success') {
+                    msg.className = 'msg ok';
+                    msg.textContent = '✅ 登录成功，正在跳转...';
+                    // 获取redirect参数并跳转
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const redirectUrl = urlParams.get('redirect');
+                    if (redirectUrl && result.sid) {
+                        window.location.href = redirectUrl + '?token=' + encodeURIComponent(result.sid);
+                    } else {
+                        msg.textContent = '✅ 登录成功！（缺少跳转地址）';
+                    }
+                } else {
+                    throw new Error(result.detail || result.message || '登录失败');
+                }
+            } catch (err) {
+                msg.className = 'msg err';
+                msg.textContent = '❌ ' + err.message;
+                btn.disabled = false;
+            }
+        });
+
+        // 初始化
+        setWhitelistStatus();
+        
+        // 获取管理员联系方式
+        fetch('/api/admin/contact')
+            .then(r => r.json())
+            .then(contact => renderAdminContact(contact))
+            .catch(() => {});
+    </script>
+</body>
+</html>
