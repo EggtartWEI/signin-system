@@ -702,10 +702,22 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_error(404, "File not found")
     
     def handle_get_records(self):
-        """获取所有签到记录"""
+        """获取所有签到记录（仅管理员可查看历史数据）"""
         parsed_path = urlparse(self.path)
         query_params = parse_qs(parsed_path.query)
         
+        # 检查是否是管理员
+        if not hasattr(self, 'current_user') or not is_admin_user(self.current_user):
+            # 非管理员只能查看当天的数据
+            today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+            get_or_create_daily_records(today_str)
+            data = read_data()
+            # 只返回当天的数据
+            today_data = {today_str: data.get(today_str, [])} if today_str in data else {}
+            self.send_json_response(today_data)
+            return
+        
+        # 管理员可以查看所有历史数据
         # 如果指定了日期，确保该日期的记录存在
         date_param = query_params.get('date', [None])[0]
         if date_param:
