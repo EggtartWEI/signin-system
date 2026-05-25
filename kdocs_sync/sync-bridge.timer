@@ -1,0 +1,19 @@
+[Unit]
+Description=Run Signin Sync Bridge every 10 minutes
+Documentation=https://github.com/EggtartWEI/signin-system
+
+[Timer]
+# 每 10 分钟运行一次
+OnCalendar=*:0/10
+
+# 或者每天晚上 20:00 运行
+# OnCalendar=*-*-* 20:00:00
+
+# 启动后立即运行一次
+OnBootSec=1min
+
+# 持久化（如果错过执行时间，立即补执行）
+Persistent=true
+
+[Install]
+WantedBy=timers.target

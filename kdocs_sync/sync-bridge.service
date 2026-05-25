@@ -1,0 +1,22 @@
+[Unit]
+Description=Signin System Sync Bridge
+Documentation=https://github.com/EggtartWEI/signin-system
+After=network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/signin-sync-bridge
+Environment="PATH=/opt/signin-sync-bridge/venv/bin"
+Environment="PROD_SERVER_URL=http://10.45.140.70:3000"
+Environment="AIRSCRIPT_WEBHOOK_URL=your_webhook_url"
+Environment="AIRSCRIPT_TOKEN=your_token"
+ExecStart=/opt/signin-sync-bridge/venv/bin/python /opt/signin-sync-bridge/sync_bridge.py
+
+# 日志输出
+StandardOutput=append:/var/log/signin-sync-bridge.log
+StandardError=append:/var/log/signin-sync-bridge.log
+
+[Install]
+WantedBy=multi-user.target

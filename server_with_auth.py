@@ -414,8 +414,13 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if path == '/api/user/info':
                 self.handle_get_user_info()
                 return
-        
-        # 处理根路径 / 和 /index.html
+            
+            # 数据导出接口（供同步服务器调用，不需要登录）
+            if path == '/api/export/data':
+                self.handle_export_data()
+                return
+            
+            # 处理根路径 / 和 /index.html
         if path in ['/', '/index.html']:
             is_logged, user_info = is_logged_in(self.headers)
             if not is_logged:
@@ -745,6 +750,41 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         """获取模式设置"""
         mode = read_mode()
         self.send_json_response(mode)
+    
+    def handle_export_data(self):
+        """导出所有签到数据（供同步服务器调用）"""
+        # 允许内网IP访问，不需要登录
+        client_ip = self.client_address[0]
+        
+        # 检查是否是内网IP（可选的安全检查）
+        is_private = (
+            client_ip.startswith('10.') or
+            client_ip.startswith('172.16.') or
+            client_ip.startswith('172.17.') or
+            client_ip.startswith('172.18.') or
+            client_ip.startswith('172.19.') or
+            client_ip.startswith('172.2') or
+            client_ip.startswith('172.30.') or
+            client_ip.startswith('172.31.') or
+            client_ip.startswith('192.168.') or
+            client_ip == '127.0.0.1'
+        )
+        
+        if not is_private:
+            self.send_error_response(403, '只允许内网访问')
+            return
+        
+        data = read_data()
+        
+        # 添加元信息
+        export_data = {
+            'export_time': datetime.datetime.now().isoformat(),
+            'server_ip': client_ip,
+            'record_count': len(data),
+            'data': data
+        }
+        
+        self.send_json_response(export_data)
     
     def handle_get_ip(self):
         """获取客户端IP"""
