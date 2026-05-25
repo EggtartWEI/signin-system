@@ -26,13 +26,17 @@ jobs:
 
     - name: Pull image
       run: |
-        docker pull ghcr.io/${{ github.repository }}:latest
+        # 将仓库名转换为小写
+        REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+        echo "Repository: $REPO_LOWER"
+        docker pull ghcr.io/$REPO_LOWER:latest
         docker images
 
     - name: Save image as tar
       run: |
         echo "Saving image..."
-        docker save ghcr.io/${{ github.repository }}:latest | gzip > signin-system-latest.tar.gz
+        REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+        docker save ghcr.io/$REPO_LOWER:latest | gzip > signin-system-latest.tar.gz
         ls -lh signin-system-latest.tar.gz
         echo "Image saved successfully"
 
