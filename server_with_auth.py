@@ -702,13 +702,24 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_error(404, "File not found")
     
     def handle_get_records(self):
-        """获取所有签到记录（仅管理员可查看历史数据）"""
+        """获取签到记录（权限控制：管理员-全部历史，普通员工-当天，外委-无权限）"""
         parsed_path = urlparse(self.path)
         query_params = parse_qs(parsed_path.query)
         
-        # 检查是否是管理员
-        if not hasattr(self, 'current_user') or not is_admin_user(self.current_user):
-            # 非管理员只能查看当天的数据
+        # 检查用户登录状态
+        if not hasattr(self, 'current_user') or not self.current_user:
+            self.send_error_response(401, '未登录，请先登录')
+            return
+        
+        user = self.current_user
+        
+        # 1. 外委成员：无查看权限
+        if user.get('is_external', False):
+            self.send_error_response(403, '外委成员无查看记录权限')
+            return
+        
+        # 2. 普通员工（OA账号）：只能查看当天数据
+        if not user.get('is_admin', False):
             today_str = datetime.datetime.now().strftime('%Y-%m-%d')
             get_or_create_daily_records(today_str)
             data = read_data()
@@ -717,7 +728,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_json_response(today_data)
             return
         
-        # 管理员可以查看所有历史数据
+        # 3. 管理员：可以查看所有历史数据
         # 如果指定了日期，确保该日期的记录存在
         date_param = query_params.get('date', [None])[0]
         if date_param:
