@@ -1,0 +1,67 @@
+name: Save Docker Image as File
+
+on:
+  # 手动触发
+  workflow_dispatch:
+  
+  # 每次构建成功后自动保存
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
+    branches: [main, master]
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    
+    steps:
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Pull image
+      run: |
+        docker pull ghcr.io/${{ github.repository }}:latest
+        docker images
+
+    - name: Save image as tar
+      run: |
+        echo "Saving image..."
+        docker save ghcr.io/${{ github.repository }}:latest | gzip > signin-system-latest.tar.gz
+        ls -lh signin-system-latest.tar.gz
+        echo "Image saved successfully"
+
+    - name: Upload to Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-image-tar
+        path: signin-system-latest.tar.gz
+        retention-days: 30
+
+    - name: Create Release
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/create-release@v1
+      id: create_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: image-${{ github.run_number }}
+        release_name: Docker Image ${{ github.run_number }}
+        draft: false
+        prerelease: false
+
+    - name: Upload to Release
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./signin-system-latest.tar.gz
+        asset_name: signin-system-latest.tar.gz
+        asset_content_type: application/gzip
