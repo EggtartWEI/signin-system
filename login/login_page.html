@@ -472,11 +472,12 @@
                 formData.append('username', user);
                 
                 // 判断账号类型：OA账号需要加密，外委账号和管理员使用明文
-                // 外委账号特征：以 D_、A_、Q_ 开头，或等于 admin
+                // 外委账号特征：以 D_、A_、Q_、J_ 开头，或等于 admin
                 const isLocalAccount = user === 'admin' || 
                                        user.startsWith('D_') || 
                                        user.startsWith('A_') || 
-                                       user.startsWith('Q_');
+                                       user.startsWith('Q_') ||
+                                       user.startsWith('J_');
                 
                 if (isLocalAccount) {
                     // 外委账号和管理员：明文传输
