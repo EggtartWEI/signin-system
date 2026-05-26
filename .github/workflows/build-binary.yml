@@ -1,0 +1,152 @@
+name: Build Binary Executable
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04  # UOS SERVER 20 基于 Ubuntu 20.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r login/requirements.txt
+        
+    - name: Build signin-server binary
+      run: |
+        pyinstaller \
+          --onefile \
+          --name signin-server \
+          --add-data "index.html:." \
+          --add-data "script.js:." \
+          --add-data "styles.css:." \
+          --add-data "logo.png:." \
+          --add-data "data.json:." \
+          --add-data "mode.json:." \
+          server_with_auth.py
+          
+    - name: Build signin-auth binary
+      run: |
+        cd login
+        pyinstaller \
+          --onefile \
+          --name signin-auth \
+          --add-data "external_users.json:." \
+          --add-data "login_page.html:." \
+          --add-data "whitelist.db:data/" \
+          ../attendance_login_only.py
+          
+    - name: Prepare release files
+      run: |
+        mkdir -p release/signin-system
+        cp dist/signin-server release/signin-system/
+        cp login/dist/signin-auth release/signin-system/
+        cp data.json release/signin-system/
+        cp mode.json release/signin-system/
+        cp -r login release/signin-system/
+        
+        # 创建启动脚本
+        cat > release/signin-system/start.sh << 'EOF'
+#!/bin/bash
+# 启动签到系统
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR"
+
+# 检查数据文件
+if [ ! -f data.json ]; then
+    echo '{}' > data.json
+fi
+if [ ! -f mode.json ]; then
+    echo '{"mode": "open", "allowedIPs": []}' > mode.json
+fi
+if [ ! -f login/external_users.json ]; then
+    mkdir -p login
+    echo '{}' > login/external_users.json
+fi
+
+# 启动认证服务
+echo "启动认证服务..."
+./signin-auth &
+AUTH_PID=$!
+echo $AUTH_PID > /tmp/signin-auth.pid
+
+# 等待认证服务启动
+sleep 3
+
+# 启动签到系统
+echo "启动签到系统..."
+./signin-server &
+SERVER_PID=$!
+echo $SERVER_PID > /tmp/signin-server.pid
+
+echo ""
+echo "签到系统已启动！"
+echo "访问地址: http://$(hostname -I | awk '{print $1}'):3000"
+echo ""
+echo "停止服务: kill $(cat /tmp/signin-auth.pid) $(cat /tmp/signin-server.pid)"
+EOF
+        chmod +x release/signin-system/start.sh
+        
+        # 创建 Systemd 服务文件
+        cat > release/signin-system/signin-system.service << 'EOF'
+[Unit]
+Description=Signin System
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/signin-system
+ExecStart=/opt/signin-system/start.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        
+        # 打包
+        cd release
+        tar czf signin-system-linux-amd64.tar.gz signin-system
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: signin-system-binary
+        path: release/signin-system-linux-amd64.tar.gz
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/create-release@v1
+      id: create_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Binary Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        
+    - name: Upload to Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: release/signin-system-linux-amd64.tar.gz
+        asset_name: signin-system-linux-amd64.tar.gz
+        asset_content_type: application/gzip
