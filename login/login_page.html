@@ -81,6 +81,33 @@
         .msg.err { color: #dc2626; }
         .hidden { display: none; }
         
+        /* 密码输入框容器 */
+        .password-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .password-wrapper input {
+            flex: 1;
+            padding-right: 40px;
+        }
+        .toggle-password {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            color: #6b7280;
+            padding: 0;
+            flex: none;
+        }
+        .toggle-password:hover {
+            color: #374151;
+        }
+        
         /* 密码管理相关样式 */
         .password-actions {
             margin-top: 20px;
@@ -145,10 +172,13 @@
                     <label id="userLabel">AWS OA 账号</label>
                     <input type="text" id="user" required placeholder="工号或用户名" autocomplete="username">
                 </div>
-                <div class="form-group">
-                    <label>密码</label>
-                    <input type="password" id="pass" required placeholder="密码" autocomplete="current-password">
-                </div>
+<div class="form-group">
+<label>密码</label>
+<div class="password-wrapper">
+<input type="password" id="pass" required placeholder="密码" autocomplete="current-password">
+<button type="button" class="toggle-password" id="togglePassword" title="显示/隐藏密码">👁️</button>
+</div>
+</div>
                 <button type="submit" id="btn" class="btn-primary" style="width: 100%;">🚀 登录</button>
             </form>
             
@@ -523,8 +553,22 @@
             }
         });
 
-        // 初始化
-        setWhitelistStatus();
+// 密码显示/隐藏切换
+$('togglePassword')?.addEventListener('click', function() {
+    const passInput = $('pass');
+    if (passInput.type === 'password') {
+        passInput.type = 'text';
+        this.textContent = '🙈';
+        this.title = '隐藏密码';
+    } else {
+        passInput.type = 'password';
+        this.textContent = '👁️';
+        this.title = '显示密码';
+    }
+});
+
+// 初始化
+setWhitelistStatus();
         
         // 获取管理员联系方式
         fetch('/api/admin/contact')
