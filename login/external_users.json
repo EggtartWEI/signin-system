@@ -64,5 +64,11 @@
     "dept_category": "其他",
     "dept_subitem": "保洁",
     "name": "保洁"
+  },
+  "J_kg": {
+    "password": "ww123",
+    "dept_category": "计划部",
+    "dept_subitem": "库管",
+    "name": "计划部库管"
   }
 }
