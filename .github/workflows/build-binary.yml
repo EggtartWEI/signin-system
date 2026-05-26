@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04  # UOS SERVER 20 基于 Ubuntu 20.04
+    runs-on: ubuntu-20.04
     
     steps:
     - name: Checkout code
@@ -58,69 +58,100 @@ jobs:
         cp mode.json release/signin-system/
         cp -r login release/signin-system/
         
-        # 创建启动脚本
-        cat > release/signin-system/start.sh << 'EOF'
-#!/bin/bash
-# 启动签到系统
-
-DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$DIR"
-
-# 检查数据文件
-if [ ! -f data.json ]; then
-    echo '{}' > data.json
-fi
-if [ ! -f mode.json ]; then
-    echo '{"mode": "open", "allowedIPs": []}' > mode.json
-fi
-if [ ! -f login/external_users.json ]; then
-    mkdir -p login
-    echo '{}' > login/external_users.json
-fi
-
-# 启动认证服务
-echo "启动认证服务..."
-./signin-auth &
-AUTH_PID=$!
-echo $AUTH_PID > /tmp/signin-auth.pid
-
-# 等待认证服务启动
-sleep 3
-
-# 启动签到系统
-echo "启动签到系统..."
-./signin-server &
-SERVER_PID=$!
-echo $SERVER_PID > /tmp/signin-server.pid
-
-echo ""
-echo "签到系统已启动！"
-echo "访问地址: http://$(hostname -I | awk '{print $1}'):3000"
-echo ""
-echo "停止服务: kill $(cat /tmp/signin-auth.pid) $(cat /tmp/signin-server.pid)"
-EOF
+    - name: Create start script
+      run: |
+        cat > release/signin-system/start.sh << 'STARTEOF'
+        #!/bin/bash
+        # 启动签到系统
+        
+        DIR="$(cd "$(dirname "$0")" && pwd)"
+        cd "$DIR"
+        
+        # 检查数据文件
+        if [ ! -f data.json ]; then
+            echo '{}' > data.json
+        fi
+        if [ ! -f mode.json ]; then
+            echo '{"mode": "open", "allowedIPs": []}' > mode.json
+        fi
+        if [ ! -f login/external_users.json ]; then
+            mkdir -p login
+            echo '{}' > login/external_users.json
+        fi
+        
+        # 启动认证服务
+        echo "启动认证服务..."
+        ./signin-auth &
+        AUTH_PID=$!
+        echo $AUTH_PID > /tmp/signin-auth.pid
+        
+        # 等待认证服务启动
+        sleep 3
+        
+        # 启动签到系统
+        echo "启动签到系统..."
+        ./signin-server &
+        SERVER_PID=$!
+        echo $SERVER_PID > /tmp/signin-server.pid
+        
+        echo ""
+        echo "签到系统已启动！"
+        echo "访问地址: http://$(hostname -I | awk '{print $1}'):3000"
+        echo ""
+        echo "停止服务: kill \$(cat /tmp/signin-auth.pid) \$(cat /tmp/signin-server.pid)"
+        STARTEOF
         chmod +x release/signin-system/start.sh
         
-        # 创建 Systemd 服务文件
-        cat > release/signin-system/signin-system.service << 'EOF'
-[Unit]
-Description=Signin System
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/signin-system
-ExecStart=/opt/signin-system/start.sh
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    - name: Create systemd service file
+      run: |
+        cat > release/signin-system/signin-system.service << 'SERVICEEOF'
+        [Unit]
+        Description=Signin System
+        After=network.target
         
-        # 打包
+        [Service]
+        Type=simple
+        WorkingDirectory=/opt/signin-system
+        ExecStart=/opt/signin-system/start.sh
+        Restart=always
+        RestartSec=5
+        
+        [Install]
+        WantedBy=multi-user.target
+        SERVICEEOF
+        
+    - name: Create install script
+      run: |
+        cat > release/signin-system/install.sh << 'INSTALLEOF'
+        #!/bin/bash
+        set -e
+        
+        echo "=== 安装签到系统 ==="
+        
+        # 创建目录
+        sudo mkdir -p /opt/signin-system
+        sudo cp -r . /opt/signin-system/
+        sudo chmod +x /opt/signin-system/signin-server
+        sudo chmod +x /opt/signin-system/signin-auth
+        sudo chmod +x /opt/signin-system/start.sh
+        
+        # 安装 systemd 服务
+        sudo cp /opt/signin-system/signin-system.service /etc/systemd/system/
+        sudo systemctl daemon-reload
+        sudo systemctl enable signin-system
+        sudo systemctl start signin-system
+        
+        echo "安装完成！"
+        echo "查看状态: sudo systemctl status signin-system"
+        echo "查看日志: sudo journalctl -u signin-system -f"
+        INSTALLEOF
+        chmod +x release/signin-system/install.sh
+        
+    - name: Package release
+      run: |
         cd release
         tar czf signin-system-linux-amd64.tar.gz signin-system
+        ls -lh signin-system-linux-amd64.tar.gz
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
