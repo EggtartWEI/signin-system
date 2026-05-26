@@ -19,9 +19,8 @@ jobs:
         pip install pyinstaller
         pip install -r login/requirements.txt
         
-    - name: Build binaries
+    - name: Build main server
       run: |
-        # Build main server
         pyinstaller --onefile --name signin-server \
           --add-data "index.html:." \
           --add-data "script.js:." \
@@ -29,13 +28,13 @@ jobs:
           --add-data "logo.png:." \
           server_with_auth.py
         
-        # Build auth service
-        cd login
+    - name: Build auth service
+      working-directory: ./login
+      run: |
         pyinstaller --onefile --name signin-auth \
           --add-data "external_users.json:." \
           --add-data "login_page.html:." \
-          ../attendance_login_only.py
-        cd ..
+          attendance_login_only.py
         
     - name: Package
       run: |
