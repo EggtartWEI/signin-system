@@ -62,6 +62,85 @@ ENABLE_IP_RESTRICTION = True
 # True = 启用自动同步, False = 禁用自动同步
 ENABLE_AUTO_SYNC = True
 
+# 签到时间限制配置
+# SIGNIN_START_TIME: 每日最早签到时间（24小时制，格式: HH:MM）
+# 默认 17:30 表示下午5点半，空字符串表示不限制
+SIGNIN_START_TIME = "17:30"
+
+
+def read_config():
+    """读取配置文件"""
+    config_file = 'config.json'
+    default_config = {
+        'signin_start_time': SIGNIN_START_TIME,  # 默认17:30
+        'enable_time_limit': True  # 是否启用时间限制
+    }
+    
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                # 合并默认配置
+                for key, value in default_config.items():
+                    if key not in config:
+                        config[key] = value
+                return config
+    except Exception as e:
+        print("读取配置文件失败: " + str(e))
+    
+    return default_config
+
+
+def save_config(config):
+    """保存配置文件"""
+    config_file = 'config.json'
+    try:
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print("保存配置文件失败: " + str(e))
+        return False
+
+
+def check_signin_time():
+    """检查当前是否允许签到
+    
+    返回:
+        (bool, str): (是否允许签到, 提示信息)
+    """
+    config = read_config()
+    
+    # 如果不启用时间限制，直接允许
+    if not config.get('enable_time_limit', True):
+        return True, ""
+    
+    start_time_str = config.get('signin_start_time', '17:30')
+    
+    # 如果时间设置为空，不限制
+    if not start_time_str:
+        return True, ""
+    
+    try:
+        # 解析时间
+        hour, minute = map(int, start_time_str.split(':'))
+        
+        # 获取当前时间
+        now = datetime.datetime.now()
+        current_time = now.hour * 60 + now.minute  # 转换为分钟数
+        start_time = hour * 60 + minute
+        
+        # 检查是否早于签到时间
+        if current_time < start_time:
+            return False, "未到签到时间，请不要提前签到"
+        
+        return True, ""
+        
+    except Exception as e:
+        print("检查签到时间失败: " + str(e))
+        # 出错时默认允许签到
+        return True, ""
+
 # 导入同步模块（放在后面导入避免循环依赖）
 def sync_to_kdocs():
     """同步当天数据到云文档"""
@@ -407,6 +486,10 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.handle_get_mode()
                 return
             
+            if path == '/api/config':
+                self.handle_get_config()
+                return
+            
             if path == '/api/ip':
                 self.handle_get_ip()
                 return
@@ -468,11 +551,15 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.handle_post_record()
             return
         
-        if path == '/api/mode':
-            self.handle_post_mode()
-            return
-        
-        self.send_error(404, "Not found")
+            if path == '/api/mode':
+                self.handle_post_mode()
+                return
+            
+            if path == '/api/config':
+                self.handle_post_config()
+                return
+            
+            self.send_error(404, "Not found")
     
     def do_DELETE(self):
         """处理DELETE请求"""
@@ -751,6 +838,53 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         mode = read_mode()
         self.send_json_response(mode)
     
+    def handle_get_config(self):
+        """获取系统配置（包括签到时间设置）"""
+        config = read_config()
+        self.send_json_response(config)
+    
+    def handle_post_config(self):
+        """保存系统配置（管理员权限）"""
+        try:
+            # 检查是否是管理员
+            if not hasattr(self, 'current_user') or not is_admin_user(self.current_user):
+                self.send_error_response(403, '权限不足，只有管理员可以修改配置')
+                return
+            
+            body = self.read_body()
+            new_config = json.loads(body)
+            
+            # 读取现有配置
+            config = read_config()
+            
+            # 更新允许修改的字段
+            if 'signin_start_time' in new_config:
+                # 验证时间格式
+                time_str = new_config['signin_start_time']
+                if time_str:  # 不为空时验证格式
+                    try:
+                        hour, minute = map(int, time_str.split(':'))
+                        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                            raise ValueError('时间范围错误')
+                    except:
+                        self.send_error_response(400, '时间格式错误，请使用 HH:MM 格式（如 17:30）')
+                        return
+                config['signin_start_time'] = time_str
+            
+            if 'enable_time_limit' in new_config:
+                config['enable_time_limit'] = bool(new_config['enable_time_limit'])
+            
+            # 保存配置
+            if save_config(config):
+                self.send_json_response({'success': True, 'config': config})
+            else:
+                self.send_error_response(500, '保存配置失败')
+        
+        except ValueError:
+            self.send_error_response(400, 'JSON parse error')
+        except Exception as e:
+            self.send_error_response(500, str(e))
+    
     def handle_export_data(self):
         """导出所有签到数据（供同步服务器调用）"""
         # 允许内网IP访问，不需要登录
@@ -832,6 +966,13 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if is_admin_action:
                 if not hasattr(self, 'current_user') or not is_admin_user(self.current_user):
                     self.send_error_response(403, '权限不足，只有管理员可以执行补签/修改操作')
+                    return
+            
+            # 只有普通签到才进行时间限制检查（管理员补签不受限制）
+            if not is_admin_action:
+                can_signin, time_msg = check_signin_time()
+                if not can_signin:
+                    self.send_error_response(403, time_msg)
                     return
             
             # 只有普通签到才进行IP限制检查（如果启用了该功能）
