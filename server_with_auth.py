@@ -64,27 +64,25 @@ ENABLE_AUTO_SYNC = True
 
 # 签到时间配置（工作日和周末不同）
 # 只有开发者可以修改代码中的这些默认值
+# 规则：只要当前显示的签到表还在，就可以签到，超过规定时间只标记迟到，不禁止签到
 SIGNIN_SCHEDULE = {
     'weekday': {  # 周一到周五
         'evening': {
             'start': '17:30',      # 开始时间
-            'end': '20:00',        # 正常结束时间（之后算迟到，不能再签到）
-            'label': '晚上签到',
-            'allow_late': False    # 不允许晚于结束时间签到
+            'end': '20:00',        # 正常结束时间（之后算迟到）
+            'label': '晚上签到'
         }
     },
     'weekend': {  # 周六周日
         'morning': {
             'start': '07:00',
             'end': '09:00',
-            'label': '早上签到',
-            'allow_late': False    # 不允许晚于结束时间签到
+            'label': '早上签到'
         },
         'evening': {
             'start': '17:30',
             'end': '20:00',
-            'label': '晚上签到',
-            'allow_late': True     # 允许晚于结束时间签到（但会标记为迟到）
+            'label': '晚上签到'
         }
     }
 }
@@ -175,7 +173,7 @@ def get_current_period():
     start_time = start_h * 60 + start_m
     end_time = end_h * 60 + end_m
     
-    # 判断是否早于开始时间
+    # 判断是否早于开始时间（只有早于开始时间才禁止签到）
     if current_time < start_time:
         return {
             'day_type': day_type,
@@ -186,20 +184,8 @@ def get_current_period():
             'message': '未到签到时间，请不要提前签到'
         }
     
-    # 判断是否晚于正常结束时间
+    # 判断是否晚于正常结束时间（只标记迟到，不禁止签到）
     is_late = current_time > end_time
-    allow_late = period_info.get('allow_late', False)
-    
-    # 如果晚于结束时间且不允许晚签到，则禁止签到
-    if is_late and not allow_late:
-        return {
-            'day_type': day_type,
-            'period': period,
-            'period_name': period_info['label'],
-            'is_late': True,
-            'can_signin': False,
-            'message': '已过签到时间，无法签到'
-        }
     
     return {
         'day_type': day_type,
