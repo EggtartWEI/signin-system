@@ -62,9 +62,9 @@ ENABLE_IP_RESTRICTION = True
 # True = 启用自动同步, False = 禁用自动同步
 ENABLE_AUTO_SYNC = True
 
-# 签到时间限制配置
+# 签到时间限制配置（固定时间，管理员只能开启/关闭，不能修改时间）
 # SIGNIN_START_TIME: 每日最早签到时间（24小时制，格式: HH:MM）
-# 默认 17:30 表示下午5点半，空字符串表示不限制
+# 默认 17:30 表示下午5点半，只有开发者可以修改代码中的这个默认值
 SIGNIN_START_TIME = "17:30"
 
 
@@ -72,8 +72,8 @@ def read_config():
     """读取配置文件"""
     config_file = 'config.json'
     default_config = {
-        'signin_start_time': SIGNIN_START_TIME,  # 默认17:30
-        'enable_time_limit': True  # 是否启用时间限制
+        'enable_time_limit': True  # 是否启用时间限制（管理员可修改）
+        # 注意：signin_start_time 固定为代码中的 SIGNIN_START_TIME，管理员不能修改
     }
     
     try:
@@ -84,10 +84,14 @@ def read_config():
                 for key, value in default_config.items():
                     if key not in config:
                         config[key] = value
+                # 强制使用代码中固定的时间（防止管理员通过手动修改配置文件绕过限制）
+                config['signin_start_time'] = SIGNIN_START_TIME
                 return config
     except Exception as e:
         print("读取配置文件失败: " + str(e))
     
+    # 返回默认配置，包含固定时间
+    default_config['signin_start_time'] = SIGNIN_START_TIME
     return default_config
 
 
@@ -95,6 +99,8 @@ def save_config(config):
     """保存配置文件"""
     config_file = 'config.json'
     try:
+        # 强制保持固定时间，防止被修改
+        config['signin_start_time'] = SIGNIN_START_TIME
         with open(config_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         return True
@@ -115,11 +121,8 @@ def check_signin_time():
     if not config.get('enable_time_limit', True):
         return True, ""
     
-    start_time_str = config.get('signin_start_time', '17:30')
-    
-    # 如果时间设置为空，不限制
-    if not start_time_str:
-        return True, ""
+    # 使用固定的时间（管理员不能修改）
+    start_time_str = SIGNIN_START_TIME
     
     try:
         # 解析时间
@@ -844,7 +847,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_json_response(config)
     
     def handle_post_config(self):
-        """保存系统配置（管理员权限）"""
+        """保存系统配置（管理员权限）- 只能开启/关闭时间限制，不能修改时间"""
         try:
             # 检查是否是管理员
             if not hasattr(self, 'current_user') or not is_admin_user(self.current_user):
@@ -857,22 +860,13 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             # 读取现有配置
             config = read_config()
             
-            # 更新允许修改的字段
-            if 'signin_start_time' in new_config:
-                # 验证时间格式
-                time_str = new_config['signin_start_time']
-                if time_str:  # 不为空时验证格式
-                    try:
-                        hour, minute = map(int, time_str.split(':'))
-                        if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                            raise ValueError('时间范围错误')
-                    except:
-                        self.send_error_response(400, '时间格式错误，请使用 HH:MM 格式（如 17:30）')
-                        return
-                config['signin_start_time'] = time_str
-            
+            # 管理员只能修改是否启用时间限制，不能修改签到时间
+            # 签到时间固定为代码中的 SIGNIN_START_TIME（默认 17:30）
             if 'enable_time_limit' in new_config:
                 config['enable_time_limit'] = bool(new_config['enable_time_limit'])
+            
+            # 强制保持固定时间（防止通过 API 绕过限制）
+            config['signin_start_time'] = SIGNIN_START_TIME
             
             # 保存配置
             if save_config(config):
