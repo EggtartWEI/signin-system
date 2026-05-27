@@ -324,6 +324,16 @@ def init_data_files():
 def generate_default_records(date):
     """生成某天的默认空签到记录"""
     records = []
+    
+    # 根据日期判断是工作日还是周末
+    # 解析日期字符串
+    try:
+        date_obj = datetime.datetime.strptime(date, '%Y-%m-%d')
+        weekday = date_obj.weekday()  # 0=周一, 5=周六, 6=周日
+        is_weekend = weekday >= 5
+    except:
+        is_weekend = False
+    
     for category, items in DEPT_STRUCTURE.items():
         for item in items:
             if isinstance(item, dict):
@@ -342,7 +352,10 @@ def generate_default_records(date):
                         'longitude': '',
                         'location': '',
                         'ip': '',
-                        'isDefault': True
+                        'isDefault': True,
+                        'period': None,
+                        'period_name': '',
+                        'is_late': False
                     })
             else:
                 full_dept = '{}-{}'.format(category, item)
@@ -357,7 +370,10 @@ def generate_default_records(date):
                     'longitude': '',
                     'location': '',
                     'ip': '',
-                    'isDefault': True
+                    'isDefault': True,
+                    'period': None,
+                    'period_name': '',
+                    'is_late': False
                 })
     return records
 
