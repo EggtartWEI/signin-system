@@ -68,20 +68,23 @@ SIGNIN_SCHEDULE = {
     'weekday': {  # 周一到周五
         'evening': {
             'start': '17:30',      # 开始时间
-            'end': '20:00',        # 正常结束时间（之后算迟到）
-            'label': '晚上签到'
+            'end': '20:00',        # 正常结束时间（之后算迟到，不能再签到）
+            'label': '晚上签到',
+            'allow_late': False    # 不允许晚于结束时间签到
         }
     },
     'weekend': {  # 周六周日
         'morning': {
             'start': '07:00',
             'end': '09:00',
-            'label': '早上签到'
+            'label': '早上签到',
+            'allow_late': False    # 不允许晚于结束时间签到
         },
         'evening': {
             'start': '17:30',
             'end': '20:00',
-            'label': '晚上签到'
+            'label': '晚上签到',
+            'allow_late': True     # 允许晚于结束时间签到（但会标记为迟到）
         }
     }
 }
@@ -183,8 +186,20 @@ def get_current_period():
             'message': '未到签到时间，请不要提前签到'
         }
     
-    # 判断是否晚于正常结束时间（算迟到）
+    # 判断是否晚于正常结束时间
     is_late = current_time > end_time
+    allow_late = period_info.get('allow_late', False)
+    
+    # 如果晚于结束时间且不允许晚签到，则禁止签到
+    if is_late and not allow_late:
+        return {
+            'day_type': day_type,
+            'period': period,
+            'period_name': period_info['label'],
+            'is_late': True,
+            'can_signin': False,
+            'message': '已过签到时间，无法签到'
+        }
     
     return {
         'day_type': day_type,
