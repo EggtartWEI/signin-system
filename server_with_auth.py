@@ -62,10 +62,29 @@ ENABLE_IP_RESTRICTION = True
 # True = 启用自动同步, False = 禁用自动同步
 ENABLE_AUTO_SYNC = True
 
-# 签到时间限制配置（固定时间，管理员只能开启/关闭，不能修改时间）
-# SIGNIN_START_TIME: 每日最早签到时间（24小时制，格式: HH:MM）
-# 默认 17:30 表示下午5点半，只有开发者可以修改代码中的这个默认值
-SIGNIN_START_TIME = "17:30"
+# 签到时间配置（工作日和周末不同）
+# 只有开发者可以修改代码中的这些默认值
+SIGNIN_SCHEDULE = {
+    'weekday': {  # 周一到周五
+        'evening': {
+            'start': '17:30',      # 开始时间
+            'end': '20:00',        # 正常结束时间（之后算迟到）
+            'label': '晚上签到'
+        }
+    },
+    'weekend': {  # 周六周日
+        'morning': {
+            'start': '07:00',
+            'end': '09:00',
+            'label': '早上签到'
+        },
+        'evening': {
+            'start': '17:30',
+            'end': '20:00',
+            'label': '晚上签到'
+        }
+    }
+}
 
 
 def read_config():
@@ -73,7 +92,6 @@ def read_config():
     config_file = 'config.json'
     default_config = {
         'enable_time_limit': True  # 是否启用时间限制（管理员可修改）
-        # 注意：signin_start_time 固定为代码中的 SIGNIN_START_TIME，管理员不能修改
     }
     
     try:
@@ -84,14 +102,10 @@ def read_config():
                 for key, value in default_config.items():
                     if key not in config:
                         config[key] = value
-                # 强制使用代码中固定的时间（防止管理员通过手动修改配置文件绕过限制）
-                config['signin_start_time'] = SIGNIN_START_TIME
                 return config
     except Exception as e:
         print("读取配置文件失败: " + str(e))
     
-    # 返回默认配置，包含固定时间
-    default_config['signin_start_time'] = SIGNIN_START_TIME
     return default_config
 
 
@@ -99,8 +113,6 @@ def save_config(config):
     """保存配置文件"""
     config_file = 'config.json'
     try:
-        # 强制保持固定时间，防止被修改
-        config['signin_start_time'] = SIGNIN_START_TIME
         with open(config_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         return True
@@ -109,8 +121,83 @@ def save_config(config):
         return False
 
 
+def get_current_period():
+    """获取当前签到时段信息
+    
+    返回:
+        {
+            'day_type': 'weekday'|'weekend',
+            'period': 'morning'|'evening'|None,
+            'period_name': str,
+            'is_late': bool,
+            'can_signin': bool,
+            'message': str
+        }
+    """
+    now = datetime.datetime.now()
+    weekday = now.weekday()  # 0=周一, 5=周六, 6=周日
+    current_time = now.hour * 60 + now.minute  # 当前时间（分钟）
+    
+    # 判断是工作日还是周末
+    if weekday < 5:  # 周一到周五
+        day_type = 'weekday'
+        schedule = SIGNIN_SCHEDULE['weekday']
+        # 工作日只有晚上签到
+        period_info = schedule.get('evening')
+        period = 'evening'
+    else:  # 周六周日
+        day_type = 'weekend'
+        schedule = SIGNIN_SCHEDULE['weekend']
+        # 周末根据时间判断是早上还是晚上（12点为界）
+        if now.hour < 12:
+            period_info = schedule.get('morning')
+            period = 'morning'
+        else:
+            period_info = schedule.get('evening')
+            period = 'evening'
+    
+    if not period_info:
+        return {
+            'day_type': day_type,
+            'period': None,
+            'period_name': '非签到时段',
+            'is_late': False,
+            'can_signin': True,
+            'message': ''
+        }
+    
+    # 解析时间
+    start_h, start_m = map(int, period_info['start'].split(':'))
+    end_h, end_m = map(int, period_info['end'].split(':'))
+    start_time = start_h * 60 + start_m
+    end_time = end_h * 60 + end_m
+    
+    # 判断是否早于开始时间
+    if current_time < start_time:
+        return {
+            'day_type': day_type,
+            'period': period,
+            'period_name': period_info['label'],
+            'is_late': False,
+            'can_signin': False,
+            'message': '未到签到时间，请不要提前签到'
+        }
+    
+    # 判断是否晚于正常结束时间（算迟到）
+    is_late = current_time > end_time
+    
+    return {
+        'day_type': day_type,
+        'period': period,
+        'period_name': period_info['label'],
+        'is_late': is_late,
+        'can_signin': True,
+        'message': ''
+    }
+
+
 def check_signin_time():
-    """检查当前是否允许签到
+    """检查当前是否允许签到（兼容旧接口）
     
     返回:
         (bool, str): (是否允许签到, 提示信息)
@@ -121,28 +208,12 @@ def check_signin_time():
     if not config.get('enable_time_limit', True):
         return True, ""
     
-    # 使用固定的时间（管理员不能修改）
-    start_time_str = SIGNIN_START_TIME
+    period_info = get_current_period()
     
-    try:
-        # 解析时间
-        hour, minute = map(int, start_time_str.split(':'))
-        
-        # 获取当前时间
-        now = datetime.datetime.now()
-        current_time = now.hour * 60 + now.minute  # 转换为分钟数
-        start_time = hour * 60 + minute
-        
-        # 检查是否早于签到时间
-        if current_time < start_time:
-            return False, "未到签到时间，请不要提前签到"
-        
-        return True, ""
-        
-    except Exception as e:
-        print("检查签到时间失败: " + str(e))
-        # 出错时默认允许签到
-        return True, ""
+    if not period_info['can_signin']:
+        return False, period_info['message']
+    
+    return True, ""
 
 # 导入同步模块（放在后面导入避免循环依赖）
 def sync_to_kdocs():
@@ -491,6 +562,10 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             
             if path == '/api/config':
                 self.handle_get_config()
+                return
+            
+            if path == '/api/period':
+                self.handle_get_period()
                 return
             
             if path == '/api/ip':
@@ -846,6 +921,16 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         config = read_config()
         self.send_json_response(config)
     
+    def handle_get_period(self):
+        """获取当前签到时段信息"""
+        period_info = get_current_period()
+        # 添加完整的时间配置信息
+        response = {
+            'current': period_info,
+            'schedule': SIGNIN_SCHEDULE
+        }
+        self.send_json_response(response)
+    
     def handle_post_config(self):
         """保存系统配置（管理员权限）- 只能开启/关闭时间限制，不能修改时间"""
         try:
@@ -963,11 +1048,14 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     return
             
             # 只有普通签到才进行时间限制检查（管理员补签不受限制）
+            period_info = None
             if not is_admin_action:
                 can_signin, time_msg = check_signin_time()
                 if not can_signin:
                     self.send_error_response(403, time_msg)
                     return
+                # 获取当前时段信息（用于标记迟到）
+                period_info = get_current_period()
             
             # 只有普通签到才进行IP限制检查（如果启用了该功能）
             if ENABLE_IP_RESTRICTION and not is_admin_action:
@@ -986,11 +1074,20 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     r.update(record)
                     r['displayName'] = display_name
                     r['isDefault'] = False
+                    # 添加时段信息和迟到标记
+                    if period_info:
+                        r['period'] = period_info['period']  # morning/evening
+                        r['period_name'] = period_info['period_name']  # 早上签到/晚上签到
+                        r['is_late'] = period_info['is_late']  # 是否迟到
                     found = True
                     break
             
             if not found:
                 # 如果找不到对应部门（不应该发生），添加新记录
+                if period_info:
+                    record['period'] = period_info['period']
+                    record['period_name'] = period_info['period_name']
+                    record['is_late'] = period_info['is_late']
                 records.append(record)
             
             # 读取完整数据，更新当前日期，保留其他日期
